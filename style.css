@@ -1,0 +1,451 @@
+/* Сброс стилей и базовые настройки */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* Цветовая палитра MAX */
+    --primary-color: #0077FF;
+    --primary-dark: #0056CC;
+    --success-color: #00C853;
+    --danger-color: #FF3B30;
+    --warning-color: #FF9500;
+    --text-primary: #000000;
+    --text-secondary: #6C757D;
+    --bg-primary: #FFFFFF;
+    --bg-secondary: #F8F9FA;
+    --border-color: #E0E0E0;
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 
+                 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.container {
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--bg-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* =============== ЗАГОЛОВОК =============== */
+.header {
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    padding: 24px 20px;
+    text-align: center;
+}
+
+.header h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+
+.subtitle {
+    font-size: 16px;
+    opacity: 0.9;
+}
+
+/* =============== ОСНОВНОЙ КОНТЕНТ =============== */
+.main {
+    flex: 1;
+    padding: 20px;
+}
+
+/* Статус подключения */
+.status-card {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 24px;
+    border: 1px solid var(--border-color);
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--warning-color);
+    animation: pulse 2s infinite;
+}
+
+.status-dot.connected {
+    background: var(--success-color);
+    animation: none;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+#statusText {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* Секция вызова */
+.call-section {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.btn-call {
+    width: 100%;
+    max-width: 280px;
+    padding: 24px 32px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 16px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin: 0 auto 16px;
+    box-shadow: var(--shadow);
+    transition: all 0.3s ease;
+}
+
+.btn-call:hover:not(:disabled) {
+    background: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 119, 255, 0.3);
+}
+
+.btn-call:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.btn-call:disabled {
+    background: var(--border-color);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.btn-icon {
+    font-size: 32px;
+}
+
+.btn-text {
+    font-size: 18px;
+}
+
+.call-hint {
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Быстрые действия */
+.quick-actions {
+    margin-bottom: 32px;
+}
+
+.quick-actions h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.action-card {
+    background: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px 16px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+}
+
+.action-card:hover {
+    border-color: var(--primary-color);
+    background: rgba(0, 119, 255, 0.05);
+    transform: translateY(-2px);
+}
+
+.action-card.selected {
+    border-color: var(--primary-color);
+    background: rgba(0, 119, 255, 0.1);
+}
+
+.action-icon {
+    font-size: 32px;
+}
+
+.action-text {
+    font-size: 14px;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* Информация */
+.info-section {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+}
+
+.info-section h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+.info-list {
+    padding-left: 20px;
+}
+
+.info-list li {
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* =============== ЭКРАН ОЖИДАНИЯ =============== */
+.waiting-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.waiting-content {
+    text-align: center;
+    padding: 32px;
+}
+
+.spinner {
+    width: 64px;
+    height: 64px;
+    border: 4px solid var(--border-color);
+    border-top: 4px solid var(--primary-color);
+    border-radius: 50%;
+    margin: 0 auto 24px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.waiting-content h2 {
+    font-size: 24px;
+    margin-bottom: 12px;
+}
+
+.waiting-content p {
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+}
+
+/* =============== ЭКРАН ЗВОНКА =============== */
+.call-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.call-content {
+    text-align: center;
+    padding: 32px;
+    width: 100%;
+}
+
+.volunteer-avatar {
+    width: 120px;
+    height: 120px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 24px;
+}
+
+.avatar-icon {
+    font-size: 64px;
+}
+
+.call-content h2 {
+    font-size: 28px;
+    margin-bottom: 8px;
+}
+
+.volunteer-name {
+    font-size: 18px;
+    opacity: 0.9;
+    margin-bottom: 24px;
+}
+
+.call-timer {
+    font-size: 48px;
+    font-weight: 300;
+    margin-bottom: 32px;
+    font-variant-numeric: tabular-nums;
+}
+
+.call-controls {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 24px;
+}
+
+.control-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    padding: 16px 24px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.3s ease;
+    min-width: 100px;
+}
+
+.control-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.end-btn {
+    background: var(--danger-color);
+    border-color: var(--danger-color);
+}
+
+.end-btn:hover {
+    background: #CC0000;
+}
+
+.control-icon {
+    font-size: 32px;
+}
+
+.control-text {
+    font-size: 12px;
+}
+
+.chat-toggle {
+    margin-top: 24px;
+}
+
+.chat-toggle button {
+    background: rgba(255, 255, 255, 0.2);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    padding: 12px 24px;
+    color: white;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s ease;
+}
+
+.chat-toggle button:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* =============== КНОПКИ =============== */
+.btn-secondary {
+    background: transparent;
+    border: 2px solid var(--primary-color);
+    color: var(--primary-color);
+    padding: 12px 32px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-secondary:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+/* =============== ФУТЕР =============== */
+.footer {
+    text-align: center;
+    padding: 20px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    border-top: 1px solid var(--border-color);
+}
+
+.footer-small {
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+/* =============== УТИЛИТЫ =============== */
+.hidden {
+    display: none !important;
+}
+
+/* =============== АДАПТИВНОСТЬ =============== */
+@media (max-width: 480px) {
+    .header h1 {
+        font-size: 24px;
+    }
+    
+    .btn-call {
+        padding: 20px 24px;
+    }
+    
+    .actions-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .call-timer {
+        font-size: 36px;
+    }
+}
+
