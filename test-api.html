@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .test-section {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 10px;
+        }
+        button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: bold;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        pre {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .success { background: rgba(46, 213, 115, 0.3); }
+        .error { background: rgba(255, 71, 87, 0.3); }
+        input {
+            padding: 8px;
+            border: none;
+            border-radius: 5px;
+            margin: 5px;
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Тест API бэкенда</h1>
+    
+    <div class="test-section">
+        <h3>Конфигурация</h3>
+        <p>API URL: <span id="apiUrl">загрузка...</span></p>
+        <button onclick="loadConfig()">Перезагрузить конфиг</button>
+    </div>
+
+    <div class="test-section">
+        <h3>1. Проверка здоровья API</h3>
+        <button onclick="testHealth()">GET /health</button>
+        <div id="healthResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>2. Общая статистика</h3>
+        <button onclick="testStats()">GET /api/stats/overview</button>
+        <div id="statsResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>3. Создать запрос на помощь</h3>
+        <input type="number" id="userId" placeholder="User ID" value="12345">
+        <select id="actionType">
+            <option value="read">Прочитать текст</option>
+            <option value="describe">Описать изображение</option>
+            <option value="navigate">Навигация</option>
+            <option value="other">Другое</option>
+        </select>
+        <button onclick="testCreateRequest()">POST /api/call-requests</button>
+        <div id="requestResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>4. Список доступных волонтёров</h3>
+        <button onclick="testVolunteers()">GET /api/volunteers/available</button>
+        <div id="volunteersResult"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>5. Полный тест потока</h3>
+        <button onclick="testFullFlow()">Запустить полный тест</button>
+        <div id="fullFlowResult"></div>
+    </div>
+
+    <script>
+        let apiBaseUrl = null;
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('./config.json');
+                const config = await response.json();
+                apiBaseUrl = config.apiBaseUrl;
+                document.getElementById('apiUrl').textContent = apiBaseUrl;
+                document.getElementById('apiUrl').style.color = '#46d573';
+                console.log('Config loaded:', config);
+            } catch (error) {
+                document.getElementById('apiUrl').textContent = 'Ошибка загрузки';
+                document.getElementById('apiUrl').style.color = '#ff4757';
+                console.error('Error loading config:', error);
+            }
+        }
+
+        async function testHealth() {
+            const resultDiv = document.getElementById('healthResult');
+            try {
+                const response = await fetch(`${apiBaseUrl}/health`);
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        <strong>Успех!</strong><br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>Ошибка:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function testStats() {
+            const resultDiv = document.getElementById('statsResult');
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/stats/overview`);
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        <strong>Статистика:</strong><br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>Ошибка:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function testCreateRequest() {
+            const resultDiv = document.getElementById('requestResult');
+            const userId = document.getElementById('userId').value;
+            const actionType = document.getElementById('actionType').value;
+            
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/call-requests`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: parseInt(userId),
+                        action_type: actionType
+                    })
+                });
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        <strong>Запрос создан!</strong><br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>Ошибка:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function testVolunteers() {
+            const resultDiv = document.getElementById('volunteersResult');
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/volunteers/available`);
+                const data = await response.json();
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        <strong>Найдено волонтёров: ${data.length}</strong><br>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>Ошибка:</strong> ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        async function testFullFlow() {
+            const resultDiv = document.getElementById('fullFlowResult');
+            let log = '';
+            
+            try {
+                log += '1. Создание запроса...\n';
+                const requestResponse = await fetch(`${apiBaseUrl}/api/call-requests`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: 99999,
+                        action_type: 'read'
+                    })
+                });
+                const request = await requestResponse.json();
+                log += `   Запрос создан: ID=${request.id}\n\n`;
+
+                log += '2. Поиск волонтёров...\n';
+                const volunteersResponse = await fetch(`${apiBaseUrl}/api/volunteers/available`);
+                const volunteers = await volunteersResponse.json();
+                log += `   Найдено волонтёров: ${volunteers.length}\n\n`;
+
+                if (volunteers.length > 0) {
+                    log += '3. Создание сессии...\n';
+                    const sessionResponse = await fetch(`${apiBaseUrl}/api/call-sessions`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            request_id: request.id,
+                            volunteer_id: volunteers[0].id
+                        })
+                    });
+                    const session = await sessionResponse.json();
+                    log += `   Сессия создана: ID=${session.id}\n\n`;
+
+                    log += '4. Завершение сессии...\n';
+                    const endResponse = await fetch(`${apiBaseUrl}/api/call-sessions/${session.id}/end`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            duration: 120,
+                            rating: 5
+                        })
+                    });
+                    const endedSession = await endResponse.json();
+                    log += `   Сессия завершена\n\n`;
+
+                    log += 'ПОЛНЫЙ ТЕСТ ПРОШЁЛ УСПЕШНО!';
+                } else {
+                    log += '\nНет доступных волонтёров. Запустите:\n';
+                    log += 'cd backend\n';
+                    log += 'python seed_data.py\n';
+                }
+
+                resultDiv.innerHTML = `
+                    <div class="status success">
+                        <pre>${log}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="status error">
+                        <strong>Ошибка на этапе:</strong><br>
+                        <pre>${log}\n\nОШИБКА: ${error.message}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        // Загрузка конфига при старте
+        loadConfig();
+    </script>
+</body>
+</html>
+

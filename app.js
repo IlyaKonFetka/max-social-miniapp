@@ -10,34 +10,69 @@ const AppState = {
     selectedAction: null,
     callStartTime: null,
     callTimerInterval: null,
-    userData: null
+    userData: null,
+    apiBaseUrl: null,
+    currentRequestId: null,
+    currentSessionId: null
 };
 
-// ============= ИНИЦИАЛИЗАЦИЯ MAX BRIDGE =============
+// ============= ИНИЦИАЛИЗАЦИЯ =============
 
-// Проверяем доступность MAX Bridge
-if (typeof MaxBridge !== 'undefined') {
-    console.log('✅ MAX Bridge доступен');
-    
-    // Инициализация при готовности
-    MaxBridge.ready(() => {
-        console.log('✅ MAX Bridge готов');
-        AppState.isMaxReady = true;
-        updateStatus('connected', 'Подключено к MAX');
-        enableCallButton();
+// Загрузка конфигурации API
+async function loadConfig() {
+    try {
+        const response = await fetch('./config.json');
+        const config = await response.json();
+        AppState.apiBaseUrl = config.apiBaseUrl;
+        console.log('API URL загружен:', AppState.apiBaseUrl);
         
-        // Получаем данные пользователя
-        getUserData();
-    });
-} else {
-    console.warn('⚠️ MAX Bridge недоступен - работа в режиме разработки');
-    // Эмуляция для тестирования вне MAX
-    setTimeout(() => {
-        AppState.isMaxReady = true;
-        updateStatus('connected', 'Режим разработки');
-        enableCallButton();
-    }, 1000);
+        // Проверка доступности API
+        await checkApiHealth();
+    } catch (error) {
+        console.error('Ошибка загрузки конфига:', error);
+        updateStatus('error', 'Ошибка подключения к API');
+    }
 }
+
+// Проверка здоровья API
+async function checkApiHealth() {
+    try {
+        const response = await fetch(`${AppState.apiBaseUrl}/health`);
+        const data = await response.json();
+        console.log('API здоровье:', data);
+        updateStatus('connected', 'API подключен');
+    } catch (error) {
+        console.error('API недоступен:', error);
+        updateStatus('error', 'API недоступен');
+    }
+}
+
+// Инициализация при загрузке страницы
+loadConfig().then(() => {
+    // Проверяем доступность MAX Bridge
+    if (typeof MaxBridge !== 'undefined') {
+        console.log('MAX Bridge доступен');
+        
+        // Инициализация при готовности
+        MaxBridge.ready(() => {
+            console.log('MAX Bridge готов');
+            AppState.isMaxReady = true;
+            updateStatus('connected', 'Подключено к MAX');
+            enableCallButton();
+            
+            // Получаем данные пользователя
+            getUserData();
+        });
+    } else {
+        console.warn('MAX Bridge недоступен - работа в режиме разработки');
+        // Эмуляция для тестирования вне MAX
+        setTimeout(() => {
+            AppState.isMaxReady = true;
+            updateStatus('connected', 'Режим разработки');
+            enableCallButton();
+        }, 1000);
+    }
+});
 
 // ============= ПОЛУЧЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ =============
 
@@ -46,10 +81,10 @@ function getUserData() {
         MaxBridge.getUserData()
             .then(data => {
                 AppState.userData = data;
-                console.log('👤 Данные пользователя:', data);
+                console.log('Данные пользователя:', data);
             })
             .catch(err => {
-                console.error('❌ Ошибка получения данных пользователя:', err);
+                console.error('Ошибка получения данных пользователя:', err);
             });
     }
 }
@@ -119,7 +154,7 @@ document.querySelectorAll('.action-card').forEach(card => {
         const actionText = this.querySelector('.action-text').textContent;
         document.querySelector('.btn-text').textContent = `Позвать: ${actionText}`;
         
-        console.log('✅ Выбрано действие:', AppState.selectedAction);
+        console.log('Выбрано действие:', AppState.selectedAction);
     });
 });
 
@@ -135,30 +170,27 @@ document.getElementById('endCallBtn').addEventListener('click', () => {
 
 // Кнопка отключения микрофона
 document.getElementById('muteBtn').addEventListener('click', function() {
-    const icon = this.querySelector('.control-icon');
     const text = this.querySelector('.control-text');
     
-    if (icon.textContent === '🔇') {
-        icon.textContent = '🔊';
+    if (text.textContent === 'Выкл. микрофон') {
         text.textContent = 'Вкл. микрофон';
-        console.log('🔇 Микрофон выключен');
+        console.log('Микрофон выключен');
     } else {
-        icon.textContent = '🔇';
         text.textContent = 'Выкл. микрофон';
-        console.log('🔊 Микрофон включен');
+        console.log('Микрофон включен');
     }
 });
 
 // Кнопка чата
 document.getElementById('toggleChatBtn').addEventListener('click', () => {
-    alert('💬 Чат будет реализован в следующей версии');
+    alert('Чат будет реализован в следующей версии');
     // TODO: Открыть чат интерфейс
 });
 
 // ============= ЛОГИКА ЗВОНКА =============
 
 function startCallProcess() {
-    console.log('📞 Начало процесса вызова...');
+    console.log('Начало процесса вызова...');
     
     // Показываем экран ожидания
     showScreen('waiting');
@@ -172,63 +204,139 @@ function startCallProcess() {
     }, 3000); // 3 секунды для демо
 }
 
-function sendCallRequestToBot() {
-    if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
-        MaxBridge.sendData({
-            type: 'call_request',
-            action: AppState.selectedAction,
-            timestamp: Date.now()
-        })
-        .then(() => {
-            console.log('✅ Запрос отправлен боту');
-        })
-        .catch(err => {
-            console.error('❌ Ошибка отправки запроса:', err);
+async function sendCallRequestToBot() {
+    try {
+        // Получаем user_id из MAX или используем тестовый
+        const userId = AppState.userData?.user_id || Math.floor(Math.random() * 100000);
+        
+        // Отправляем запрос к API
+        const response = await fetch(`${AppState.apiBaseUrl}/api/call-requests`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                user_id: userId,
+                action_type: AppState.selectedAction
+            })
         });
-    } else {
-        console.log('📤 Эмуляция отправки запроса боту:', {
-            type: 'call_request',
-            action: AppState.selectedAction
-        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        AppState.currentRequestId = data.id;
+        console.log('Запрос создан:', data);
+        
+        // Также отправляем через MAX Bridge если доступен
+        if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
+            MaxBridge.sendData({
+                type: 'call_request',
+                action: AppState.selectedAction,
+                request_id: data.id,
+                timestamp: Date.now()
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка отправки запроса:', error);
+        alert('Ошибка создания запроса. Проверьте подключение к API.');
     }
 }
 
-function connectToVolunteer() {
-    console.log('✅ Волонтёр найден!');
+async function connectToVolunteer() {
+    console.log('Волонтёр найден!');
     
-    // Показываем экран звонка
-    showScreen('call');
-    
-    // Запускаем таймер звонка
-    AppState.callStartTime = Date.now();
-    startCallTimer();
-    
-    // Устанавливаем имя волонтёра (анонимное)
-    document.getElementById('volunteerName').textContent = 'Волонтёр #' + Math.floor(Math.random() * 9999);
-    
-    AppState.isCallActive = true;
-    
-    // Уведомляем MAX о начале звонка
-    if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
-        MaxBridge.sendData({
-            type: 'call_started',
-            timestamp: Date.now()
+    try {
+        // Получаем доступного волонтёра
+        const volunteersResponse = await fetch(`${AppState.apiBaseUrl}/api/volunteers/available`);
+        const volunteers = await volunteersResponse.json();
+        
+        if (volunteers.length === 0) {
+            alert('К сожалению, сейчас нет доступных волонтёров. Попробуйте позже.');
+            showScreen('main');
+            return;
+        }
+        
+        const volunteer = volunteers[0];
+        
+        // Создаём сессию звонка
+        const sessionResponse = await fetch(`${AppState.apiBaseUrl}/api/call-sessions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                request_id: AppState.currentRequestId,
+                volunteer_id: volunteer.id
+            })
         });
+        
+        if (!sessionResponse.ok) {
+            throw new Error('Ошибка создания сессии');
+        }
+        
+        const session = await sessionResponse.json();
+        AppState.currentSessionId = session.id;
+        
+        // Показываем экран звонка
+        showScreen('call');
+        
+        // Запускаем таймер звонка
+        AppState.callStartTime = Date.now();
+        startCallTimer();
+        
+        // Устанавливаем имя волонтёра
+        document.getElementById('volunteerName').textContent = volunteer.name || `Волонтёр #${volunteer.id}`;
+        
+        AppState.isCallActive = true;
+        
+        console.log('Сессия создана:', session);
+        
+        // Уведомляем MAX о начале звонка
+        if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
+            MaxBridge.sendData({
+                type: 'call_started',
+                session_id: session.id,
+                volunteer_id: volunteer.id,
+                timestamp: Date.now()
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка подключения к волонтёру:', error);
+        alert('Ошибка подключения к волонтёру. Попробуйте снова.');
+        showScreen('main');
+        resetActionSelection();
     }
 }
 
-function cancelCall() {
-    console.log('❌ Вызов отменён');
+async function cancelCall() {
+    console.log('Вызов отменён');
+    
+    try {
+        // Отменяем запрос на сервере
+        if (AppState.currentRequestId) {
+            await fetch(`${AppState.apiBaseUrl}/api/call-requests/${AppState.currentRequestId}/cancel`, {
+                method: 'PUT'
+            });
+            console.log('Запрос отменён на сервере');
+        }
+    } catch (error) {
+        console.error('Ошибка отмены запроса:', error);
+    }
     
     // Возвращаемся на главный экран
     showScreen('main');
     
     // Сбрасываем выбранное действие
     resetActionSelection();
+    AppState.currentRequestId = null;
 }
 
-function endCall() {
-    console.log('📵 Звонок завершён');
+async function endCall() {
+    console.log('Звонок завершён');
     
     // Останавливаем таймер
     if (AppState.callTimerInterval) {
@@ -238,13 +346,37 @@ function endCall() {
     
     // Вычисляем длительность звонка
     const duration = Math.floor((Date.now() - AppState.callStartTime) / 1000);
-    console.log(`⏱️ Длительность звонка: ${duration} сек`);
+    console.log(`Длительность звонка: ${duration} сек`);
+    
+    try {
+        // Завершаем сессию на сервере
+        if (AppState.currentSessionId) {
+            const response = await fetch(`${AppState.apiBaseUrl}/api/call-sessions/${AppState.currentSessionId}/end`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    duration: duration,
+                    rating: 5 // По умолчанию 5, можно добавить интерфейс для оценки
+                })
+            });
+            
+            if (response.ok) {
+                const session = await response.json();
+                console.log('Сессия завершена:', session);
+            }
+        }
+    } catch (error) {
+        console.error('Ошибка завершения сессии:', error);
+    }
     
     // Уведомляем MAX о завершении звонка
     if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
         MaxBridge.sendData({
             type: 'call_ended',
             duration: duration,
+            session_id: AppState.currentSessionId,
             timestamp: Date.now()
         });
     }
@@ -256,6 +388,8 @@ function endCall() {
     setTimeout(() => {
         showScreen('main');
         resetActionSelection();
+        AppState.currentRequestId = null;
+        AppState.currentSessionId = null;
     }, 2000);
     
     AppState.isCallActive = false;
@@ -265,7 +399,6 @@ function showThankYouMessage() {
     const callContent = document.querySelector('.call-content');
     callContent.innerHTML = `
         <div style="text-align: center; padding: 32px;">
-            <div style="font-size: 64px; margin-bottom: 16px;">✅</div>
             <h2 style="font-size: 28px; margin-bottom: 12px;">Спасибо!</h2>
             <p style="font-size: 18px; opacity: 0.9;">Надеемся, мы смогли помочь</p>
         </div>
@@ -338,6 +471,6 @@ window.addEventListener('beforeunload', () => {
 });
 
 // Логирование для отладки
-console.log('📱 Мини-приложение загружено');
-console.log('🔧 Режим:', typeof MaxBridge !== 'undefined' ? 'Продакшн (MAX)' : 'Разработка');
+console.log('Мини-приложение загружено');
+console.log('Режим:', typeof MaxBridge !== 'undefined' ? 'Продакшн (MAX)' : 'Разработка');
 

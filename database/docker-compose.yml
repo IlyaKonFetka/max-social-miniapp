@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: miniapp_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: miniapp_db
+      POSTGRES_USER: miniapp_user
+      POSTGRES_PASSWORD: miniapp_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - miniapp_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U miniapp_user -d miniapp_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer:latest
+    container_name: miniapp_adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - miniapp_network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  miniapp_network:
+    driver: bridge
+

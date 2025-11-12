@@ -1,0 +1,13 @@
+# Docker volumes
+postgres_data/
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# Backups
+*.sql.backup
+backup*.sql
+

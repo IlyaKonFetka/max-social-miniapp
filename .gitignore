@@ -30,3 +30,16 @@ yarn.lock
 test/
 coverage/
 
+# Backend
+backend/__pycache__/
+backend/venv/
+backend/.env
+backend/*.db
+
+# Database
+database/postgres_data/
+database/.env
+
+# Config
+config.json
+
