@@ -425,6 +425,90 @@ body {
     margin-top: 4px;
 }
 
+/* =============== DEV PANEL =============== */
+.dev-panel {
+    margin-top: 32px;
+    padding: 20px;
+    border: 1px dashed var(--border-color);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.dev-panel-text {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.dev-input-grid {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.dev-input-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.dev-input-grid span {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.dev-input-grid input {
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'Courier New', monospace;
+}
+
+.dev-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dev-actions button {
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none;
+    background: var(--primary-color);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.dev-actions button.active {
+    background: #1661c4;
+}
+
+.dev-actions button.ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.dev-actions button:hover {
+    opacity: 0.85;
+}
+
+.dev-status {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.dev-hint {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
 /* =============== УТИЛИТЫ =============== */
 .hidden {
     display: none !important;

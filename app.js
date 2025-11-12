@@ -204,19 +204,6 @@ document.getElementById('endCallBtn').addEventListener('click', () => {
     endCall();
 });
 
-// Кнопка отключения микрофона
-document.getElementById('muteBtn').addEventListener('click', function() {
-    const text = this.querySelector('.control-text');
-    
-    if (text.textContent === 'Выкл. микрофон') {
-        text.textContent = 'Вкл. микрофон';
-        console.log('Микрофон выключен');
-    } else {
-        text.textContent = 'Выкл. микрофон';
-        console.log('Микрофон включен');
-    }
-});
-
 // Кнопка чата
 document.getElementById('toggleChatBtn').addEventListener('click', () => {
     alert('Чат будет реализован в следующей версии');
@@ -338,14 +325,22 @@ async function connectToVolunteer() {
             return;
         }
         
-        // Подключаемся к signaling серверу если URL задан
+        // Подключаемся к signaling серверу и начинаем звонок
         if (AppState.signalingUrl) {
             try {
                 await connectSignaling(AppState.signalingUrl, AppState.roomId);
-                await startCall();
+                // Небольшая задержка перед началом звонка
+                setTimeout(() => {
+                    startCall().catch(err => console.error('Ошибка startCall:', err));
+                }, 500);
             } catch (error) {
                 console.error('Ошибка WebRTC:', error);
+                if (AppState.isDevelopment) {
+                    updateDevStatus('Не удалось подключиться к signaling серверу');
+                }
             }
+        } else {
+            console.warn('Signaling URL не задан - WebRTC звонки недоступны');
         }
         
         // Уведомляем MAX о начале звонка
@@ -617,10 +612,43 @@ function updateCallStatus(state) {
 
 // ============= SIGNALING SERVER =============
 
+function normalizeSignalingUrl(rawUrl) {
+    if (!rawUrl) return '';
+    let url = rawUrl.trim();
+    
+    if (url.startsWith('ws://') || url.startsWith('wss://')) {
+        // already includes protocol
+    } else if (url.startsWith('http://')) {
+        url = url.replace('http://', 'ws://');
+    } else if (url.startsWith('https://')) {
+        url = url.replace('https://', 'wss://');
+    } else {
+        url = `wss://${url}`;
+    }
+    
+    const hasPath = /wss?:\/\/[^/]+\/.+/.test(url);
+    if (!hasPath) {
+        url = url.endsWith('/') ? `${url}ws` : `${url}/ws`;
+    }
+    
+    return url;
+}
+
 function connectSignaling(url, roomId) {
+    // Если параметры не переданы, используем из AppState
+    const signalingUrl = url || AppState.signalingUrl;
+    const room = roomId || AppState.roomId;
+    
+    if (!signalingUrl || !room) {
+        console.warn('Нет signaling URL или room ID');
+        return Promise.resolve();
+    }
+    
+    const normalizedUrl = normalizeSignalingUrl(signalingUrl);
+    
     return new Promise((resolve, reject) => {
         try {
-            SignalingState.socket = new WebSocket(url);
+            SignalingState.socket = new WebSocket(normalizedUrl);
             SignalingState.shouldReconnect = true;
             
             SignalingState.socket.onopen = () => {
@@ -630,13 +658,17 @@ function connectSignaling(url, roomId) {
                 // Присоединяемся к комнате
                 SignalingState.socket.send(JSON.stringify({
                     type: 'join',
-                    roomId: roomId
+                    roomId: room
                 }));
                 
                 // Отправляем накопленные сообщения
                 while (SignalingState.messageQueue.length > 0) {
                     const msg = SignalingState.messageQueue.shift();
                     SignalingState.socket.send(JSON.stringify(msg));
+                }
+                
+                if (AppState.isDevelopment) {
+                    updateDevStatus(`Подключено к ${room}`);
                 }
                 
                 resolve();
@@ -647,6 +679,9 @@ function connectSignaling(url, roomId) {
             SignalingState.socket.onerror = (error) => {
                 console.error('WebSocket ошибка:', error);
                 SignalingState.isReady = false;
+                if (AppState.isDevelopment) {
+                    updateDevStatus('Ошибка подключения к signaling серверу');
+                }
                 reject(error);
             };
             
@@ -655,12 +690,15 @@ function connectSignaling(url, roomId) {
                 SignalingState.isReady = false;
                 
                 if (SignalingState.shouldReconnect) {
-                    attemptReconnect(url, roomId);
+                    attemptReconnect(normalizedUrl, room);
                 }
             };
             
         } catch (error) {
             console.error('Ошибка создания WebSocket:', error);
+            if (AppState.isDevelopment) {
+                updateDevStatus('Неверный URL');
+            }
             reject(error);
         }
     });
@@ -714,6 +752,26 @@ async function handleSignalingMessage(event) {
 }
 
 async function handleOffer(offer) {
+    // В режиме волонтера автоматически принимаем вызов
+    if (AppState.role === 'volunteer' && !AppState.isCallActive) {
+        console.log('Волонтер: входящий вызов');
+        
+        // Получаем медиа-поток
+        const mediaSuccess = await initMediaStreams();
+        if (!mediaSuccess) {
+            console.error('Не удалось получить медиа-поток');
+            return;
+        }
+        
+        // Показываем экран звонка
+        showScreen('call');
+        AppState.isCallActive = true;
+        AppState.callStartTime = Date.now();
+        startCallTimer();
+        
+        document.getElementById('volunteerName').textContent = 'Пользователь';
+    }
+    
     if (!AppState.peerConnection) {
         createPeerConnection();
     }
@@ -831,6 +889,123 @@ document.getElementById('muteBtn')?.addEventListener('click', toggleMute);
 const cameraBtn = document.getElementById('cameraBtn');
 if (cameraBtn) {
     cameraBtn.addEventListener('click', toggleCamera);
+}
+
+// ============= DEV MODE =============
+
+function initDevMode() {
+    const panel = document.getElementById('devPanel');
+    if (!panel) return;
+    
+    panel.classList.remove('hidden');
+    
+    const params = new URLSearchParams(window.location.search);
+    
+    let storedUrl = '';
+    let storedRoom = '';
+    let storedRole = 'user';
+    try {
+        storedUrl = localStorage.getItem('devSignalingUrl') || '';
+        storedRoom = localStorage.getItem('devRoomId') || '';
+        storedRole = localStorage.getItem('devRole') || 'user';
+    } catch (error) {
+        console.warn('localStorage недоступен', error);
+    }
+    
+    AppState.signalingUrl = params.get('signal') || storedUrl || AppState.signalingUrl;
+    AppState.roomId = params.get('room') || storedRoom || 'test-room';
+    AppState.role = (params.get('role') || storedRole || 'user').toLowerCase();
+    
+    const signalingInput = document.getElementById('devSignalingUrl');
+    const roomInput = document.getElementById('devRoomId');
+    
+    if (signalingInput) signalingInput.value = AppState.signalingUrl || '';
+    if (roomInput) roomInput.value = AppState.roomId || '';
+    
+    setRole(AppState.role);
+    
+    const saveBtn = document.getElementById('devSaveBtn');
+    const resetBtn = document.getElementById('devResetBtn');
+    const volunteerBtn = document.getElementById('devVolunteerToggle');
+    
+    if (saveBtn) {
+        saveBtn.addEventListener('click', () => {
+            AppState.signalingUrl = document.getElementById('devSignalingUrl').value.trim();
+            AppState.roomId = document.getElementById('devRoomId').value.trim() || 'test-room';
+            persistDevSettings();
+            
+            if (AppState.signalingUrl && AppState.roomId) {
+                updateDevStatus('Настройки сохранены. Готово к звонку.');
+            } else {
+                updateDevStatus('Укажите адрес сервера и Room ID');
+            }
+        });
+    }
+    
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            if (signalingInput) signalingInput.value = '';
+            if (roomInput) roomInput.value = '';
+            AppState.signalingUrl = '';
+            AppState.roomId = '';
+            setRole('user');
+            persistDevSettings();
+            SignalingState.shouldReconnect = false;
+            if (SignalingState.socket) {
+                SignalingState.socket.close();
+                SignalingState.socket = null;
+            }
+            updateDevStatus('Настройки сброшены');
+        });
+    }
+    
+    if (volunteerBtn) {
+        volunteerBtn.addEventListener('click', () => {
+            const nextRole = AppState.role === 'volunteer' ? 'user' : 'volunteer';
+            setRole(nextRole);
+            persistDevSettings();
+        });
+    }
+    
+    updateDevStatus('Введите настройки и нажмите "Сохранить"');
+}
+
+function persistDevSettings() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+        localStorage.setItem('devSignalingUrl', AppState.signalingUrl || '');
+        localStorage.setItem('devRoomId', AppState.roomId || '');
+        localStorage.setItem('devRole', AppState.role || 'user');
+    } catch (error) {
+        console.warn('Не удалось сохранить dev настройки', error);
+    }
+}
+
+function setRole(role) {
+    const normalized = role === 'volunteer' ? 'volunteer' : 'user';
+    AppState.role = normalized;
+    const volunteerBtn = document.getElementById('devVolunteerToggle');
+    
+    if (volunteerBtn) {
+        volunteerBtn.textContent = normalized === 'volunteer'
+            ? 'Выйти из режима волонтёра'
+            : 'Режим волонтёра';
+        volunteerBtn.classList.toggle('active', normalized === 'volunteer');
+    }
+    
+    console.log('Режим:', normalized === 'volunteer' ? 'Волонтёр' : 'Пользователь');
+}
+
+function updateDevStatus(message) {
+    const statusEl = document.getElementById('devStatusText');
+    if (statusEl) {
+        statusEl.textContent = message;
+    }
+}
+
+// Инициализация dev mode если в режиме разработки
+if (AppState.isDevelopment) {
+    initDevMode();
 }
 
 // Логирование для отладки
