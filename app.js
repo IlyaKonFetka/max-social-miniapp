@@ -13,7 +13,41 @@ const AppState = {
     userData: null,
     apiBaseUrl: null,
     currentRequestId: null,
-    currentSessionId: null
+    currentSessionId: null,
+    // WebRTC
+    localStream: null,
+    remoteStream: null,
+    peerConnection: null,
+    isMuted: false,
+    isCameraOff: false,
+    isDevelopment: typeof MaxBridge === 'undefined',
+    signalingUrl: null,
+    roomId: null,
+    role: 'user'
+};
+
+const SignalingState = {
+    socket: null,
+    isReady: false,
+    reconnectTimeout: null,
+    messageQueue: [],
+    shouldReconnect: false
+};
+
+const RTC_CONFIGURATION = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+    ]
+};
+
+const MEDIA_CONSTRAINTS = {
+    audio: true,
+    video: {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+    }
 };
 
 // ============= ИНИЦИАЛИЗАЦИЯ =============
@@ -24,7 +58,9 @@ async function loadConfig() {
         const response = await fetch('./config.json');
         const config = await response.json();
         AppState.apiBaseUrl = config.apiBaseUrl;
+        AppState.signalingUrl = config.signalingUrl;
         console.log('API URL загружен:', AppState.apiBaseUrl);
+        console.log('Signaling URL загружен:', AppState.signalingUrl);
         
         // Проверка доступности API
         await checkApiHealth();
@@ -279,6 +315,7 @@ async function connectToVolunteer() {
         
         const session = await sessionResponse.json();
         AppState.currentSessionId = session.id;
+        AppState.roomId = `session-${session.id}`;
         
         // Показываем экран звонка
         showScreen('call');
@@ -294,12 +331,30 @@ async function connectToVolunteer() {
         
         console.log('Сессия создана:', session);
         
+        // Инициализируем медиа-потоки
+        const mediaSuccess = await initMediaStreams();
+        if (!mediaSuccess) {
+            console.error('Не удалось получить медиа-поток');
+            return;
+        }
+        
+        // Подключаемся к signaling серверу если URL задан
+        if (AppState.signalingUrl) {
+            try {
+                await connectSignaling(AppState.signalingUrl, AppState.roomId);
+                await startCall();
+            } catch (error) {
+                console.error('Ошибка WebRTC:', error);
+            }
+        }
+        
         // Уведомляем MAX о начале звонка
         if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
             MaxBridge.sendData({
                 type: 'call_started',
                 session_id: session.id,
                 volunteer_id: volunteer.id,
+                room_id: AppState.roomId,
                 timestamp: Date.now()
             });
         }
@@ -337,6 +392,9 @@ async function cancelCall() {
 
 async function endCall() {
     console.log('Звонок завершён');
+    
+    // Останавливаем медиа-потоки и WebRTC
+    stopMediaStreams();
     
     // Останавливаем таймер
     if (AppState.callTimerInterval) {
@@ -390,6 +448,7 @@ async function endCall() {
         resetActionSelection();
         AppState.currentRequestId = null;
         AppState.currentSessionId = null;
+        AppState.roomId = null;
     }, 2000);
     
     AppState.isCallActive = false;
@@ -469,6 +528,310 @@ window.addEventListener('beforeunload', () => {
         }
     }
 });
+
+// ============= WEBRTC ФУНКЦИОНАЛ =============
+
+async function initMediaStreams() {
+    try {
+        console.log('Запрос доступа к камере и микрофону...');
+        AppState.localStream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
+        
+        const localVideo = document.getElementById('localVideo');
+        if (localVideo) {
+            localVideo.srcObject = AppState.localStream;
+        }
+        
+        console.log('Медиа-поток получен');
+        return true;
+    } catch (error) {
+        console.error('Ошибка получения медиа-потока:', error);
+        alert('Не удалось получить доступ к камере/микрофону. Проверьте разрешения.');
+        return false;
+    }
+}
+
+function createPeerConnection() {
+    AppState.peerConnection = new RTCPeerConnection(RTC_CONFIGURATION);
+    
+    // Добавляем локальные треки
+    if (AppState.localStream) {
+        AppState.localStream.getTracks().forEach(track => {
+            AppState.peerConnection.addTrack(track, AppState.localStream);
+        });
+    }
+    
+    // Обработчик для удалённого потока
+    AppState.peerConnection.ontrack = (event) => {
+        console.log('Получен удалённый трек:', event.track.kind);
+        
+        if (!AppState.remoteStream) {
+            AppState.remoteStream = new MediaStream();
+            const remoteVideo = document.getElementById('remoteVideo');
+            if (remoteVideo) {
+                remoteVideo.srcObject = AppState.remoteStream;
+            }
+        }
+        
+        AppState.remoteStream.addTrack(event.track);
+        
+        // Скрываем placeholder
+        const placeholder = document.getElementById('remotePlaceholder');
+        if (placeholder) {
+            placeholder.style.display = 'none';
+        }
+    };
+    
+    // ICE кандидаты
+    AppState.peerConnection.onicecandidate = (event) => {
+        if (event.candidate && SignalingState.socket) {
+            sendSignalingMessage({
+                type: 'ice-candidate',
+                payload: event.candidate
+            });
+        }
+    };
+    
+    // Состояние подключения
+    AppState.peerConnection.onconnectionstatechange = () => {
+        console.log('Состояние подключения:', AppState.peerConnection.connectionState);
+        updateCallStatus(AppState.peerConnection.connectionState);
+    };
+    
+    console.log('PeerConnection создан');
+}
+
+function updateCallStatus(state) {
+    const statusText = document.getElementById('callStatusText');
+    if (!statusText) return;
+    
+    const statusMap = {
+        'connecting': 'Подключаемся...',
+        'connected': 'Соединение установлено',
+        'disconnected': 'Соединение потеряно',
+        'failed': 'Ошибка подключения',
+        'closed': 'Звонок завершён'
+    };
+    
+    statusText.textContent = statusMap[state] || state;
+}
+
+// ============= SIGNALING SERVER =============
+
+function connectSignaling(url, roomId) {
+    return new Promise((resolve, reject) => {
+        try {
+            SignalingState.socket = new WebSocket(url);
+            SignalingState.shouldReconnect = true;
+            
+            SignalingState.socket.onopen = () => {
+                console.log('WebSocket соединение установлено');
+                SignalingState.isReady = true;
+                
+                // Присоединяемся к комнате
+                SignalingState.socket.send(JSON.stringify({
+                    type: 'join',
+                    roomId: roomId
+                }));
+                
+                // Отправляем накопленные сообщения
+                while (SignalingState.messageQueue.length > 0) {
+                    const msg = SignalingState.messageQueue.shift();
+                    SignalingState.socket.send(JSON.stringify(msg));
+                }
+                
+                resolve();
+            };
+            
+            SignalingState.socket.onmessage = handleSignalingMessage;
+            
+            SignalingState.socket.onerror = (error) => {
+                console.error('WebSocket ошибка:', error);
+                SignalingState.isReady = false;
+                reject(error);
+            };
+            
+            SignalingState.socket.onclose = () => {
+                console.log('WebSocket соединение закрыто');
+                SignalingState.isReady = false;
+                
+                if (SignalingState.shouldReconnect) {
+                    attemptReconnect(url, roomId);
+                }
+            };
+            
+        } catch (error) {
+            console.error('Ошибка создания WebSocket:', error);
+            reject(error);
+        }
+    });
+}
+
+function attemptReconnect(url, roomId) {
+    if (SignalingState.reconnectTimeout) {
+        clearTimeout(SignalingState.reconnectTimeout);
+    }
+    
+    SignalingState.reconnectTimeout = setTimeout(() => {
+        console.log('Попытка переподключения...');
+        connectSignaling(url, roomId).catch(err => {
+            console.error('Ошибка переподключения:', err);
+        });
+    }, 3000);
+}
+
+function sendSignalingMessage(message) {
+    if (SignalingState.isReady && SignalingState.socket) {
+        SignalingState.socket.send(JSON.stringify(message));
+    } else {
+        SignalingState.messageQueue.push(message);
+    }
+}
+
+async function handleSignalingMessage(event) {
+    try {
+        const data = JSON.parse(event.data);
+        console.log('Получено signaling сообщение:', data.type);
+        
+        switch (data.type) {
+            case 'offer':
+                await handleOffer(data.payload);
+                break;
+            case 'answer':
+                await handleAnswer(data.payload);
+                break;
+            case 'ice-candidate':
+                await handleIceCandidate(data.payload);
+                break;
+            case 'system':
+                console.log('System:', data.message);
+                break;
+            default:
+                console.log('Неизвестный тип сообщения:', data.type);
+        }
+    } catch (error) {
+        console.error('Ошибка обработки signaling сообщения:', error);
+    }
+}
+
+async function handleOffer(offer) {
+    if (!AppState.peerConnection) {
+        createPeerConnection();
+    }
+    
+    await AppState.peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    console.log('Offer установлен');
+    
+    const answer = await AppState.peerConnection.createAnswer();
+    await AppState.peerConnection.setLocalDescription(answer);
+    
+    sendSignalingMessage({
+        type: 'answer',
+        payload: answer
+    });
+    
+    console.log('Answer отправлен');
+}
+
+async function handleAnswer(answer) {
+    await AppState.peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    console.log('Answer установлен');
+}
+
+async function handleIceCandidate(candidate) {
+    if (AppState.peerConnection) {
+        await AppState.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log('ICE кандидат добавлен');
+    }
+}
+
+async function startCall() {
+    if (!AppState.localStream) {
+        const success = await initMediaStreams();
+        if (!success) return;
+    }
+    
+    createPeerConnection();
+    
+    // Создаём offer
+    const offer = await AppState.peerConnection.createOffer();
+    await AppState.peerConnection.setLocalDescription(offer);
+    
+    sendSignalingMessage({
+        type: 'offer',
+        payload: offer
+    });
+    
+    console.log('Offer отправлен');
+}
+
+function stopMediaStreams() {
+    if (AppState.localStream) {
+        AppState.localStream.getTracks().forEach(track => track.stop());
+        AppState.localStream = null;
+    }
+    
+    if (AppState.remoteStream) {
+        AppState.remoteStream.getTracks().forEach(track => track.stop());
+        AppState.remoteStream = null;
+    }
+    
+    if (AppState.peerConnection) {
+        AppState.peerConnection.close();
+        AppState.peerConnection = null;
+    }
+    
+    if (SignalingState.socket) {
+        SignalingState.shouldReconnect = false;
+        SignalingState.socket.close();
+        SignalingState.socket = null;
+    }
+    
+    console.log('Медиа-потоки остановлены');
+}
+
+function toggleMute() {
+    if (!AppState.localStream) return;
+    
+    const audioTrack = AppState.localStream.getAudioTracks()[0];
+    if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        AppState.isMuted = !audioTrack.enabled;
+        
+        const muteBtn = document.getElementById('muteBtn');
+        const muteText = muteBtn.querySelector('.control-text');
+        muteText.textContent = AppState.isMuted ? 'Вкл. микрофон' : 'Выкл. микрофон';
+        
+        console.log('Микрофон:', AppState.isMuted ? 'выключен' : 'включен');
+    }
+}
+
+function toggleCamera() {
+    if (!AppState.localStream) return;
+    
+    const videoTrack = AppState.localStream.getVideoTracks()[0];
+    if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        AppState.isCameraOff = !videoTrack.enabled;
+        
+        const cameraBtn = document.getElementById('cameraBtn');
+        const cameraText = cameraBtn.querySelector('.control-text');
+        cameraText.textContent = AppState.isCameraOff ? 'Вкл. камеру' : 'Выкл. камеру';
+        
+        const localVideo = document.getElementById('localVideo');
+        if (localVideo) {
+            localVideo.style.display = AppState.isCameraOff ? 'none' : 'block';
+        }
+        
+        console.log('Камера:', AppState.isCameraOff ? 'выключена' : 'включена');
+    }
+}
+
+// Обновляем обработчики кнопок
+document.getElementById('muteBtn')?.addEventListener('click', toggleMute);
+const cameraBtn = document.getElementById('cameraBtn');
+if (cameraBtn) {
+    cameraBtn.addEventListener('click', toggleCamera);
+}
 
 // Логирование для отладки
 console.log('Мини-приложение загружено');

@@ -78,17 +78,27 @@
         <!-- Экран активного звонка -->
         <div class="call-screen hidden" id="callScreen">
             <div class="call-content">
-                <div class="volunteer-avatar">
-                    <span class="avatar-icon">V</span>
+                <div class="video-wrapper">
+                    <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+                    <div class="video-placeholder" id="remotePlaceholder">
+                        <p>Ждем подключение волонтера...</p>
+                    </div>
+                    <video id="localVideo" class="local-video" autoplay playsinline muted></video>
                 </div>
-                <h2>Волонтёр на связи</h2>
-                <p class="volunteer-name" id="volunteerName">Анонимный волонтёр</p>
-                
-                <div class="call-timer" id="callTimer">00:00</div>
+
+                <div class="call-info">
+                    <h2>Волонтёр на связи</h2>
+                    <p class="volunteer-name" id="volunteerName">Анонимный волонтёр</p>
+                    <p class="call-status" id="callStatusText">Подключаемся...</p>
+                    <div class="call-timer" id="callTimer">00:00</div>
+                </div>
                 
                 <div class="call-controls">
                     <button class="control-btn mute-btn" id="muteBtn">
                         <span class="control-text">Выкл. микрофон</span>
+                    </button>
+                    <button class="control-btn camera-btn" id="cameraBtn">
+                        <span class="control-text">Выкл. камеру</span>
                     </button>
                     <button class="control-btn end-btn" id="endCallBtn">
                         <span class="control-text">Завершить</span>

@@ -430,6 +430,128 @@ body {
     display: none !important;
 }
 
+/* =============== ВИДЕО ЗВОНКИ =============== */
+.video-wrapper {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.remote-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.video-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, rgba(0, 119, 255, 0.2), rgba(0, 86, 204, 0.2));
+    color: white;
+    font-size: 16px;
+    text-align: center;
+    padding: 20px;
+}
+
+.local-video {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 100px;
+    height: 75px;
+    border-radius: 8px;
+    object-fit: cover;
+    border: 2px solid white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+
+.call-info {
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+.call-info h2 {
+    font-size: 20px;
+    margin-bottom: 4px;
+}
+
+.volunteer-name {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.call-status {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.call-controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 16px;
+}
+
+.control-btn {
+    flex: 1;
+    max-width: 120px;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.mute-btn {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.mute-btn:hover {
+    background: #e0e0e0;
+}
+
+.camera-btn {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.camera-btn:hover {
+    background: #e0e0e0;
+}
+
+.end-btn {
+    background: var(--danger-color);
+    color: white;
+}
+
+.end-btn:hover {
+    background: #cc0000;
+}
+
+.control-text {
+    font-size: 11px;
+    font-weight: 500;
+}
+
 /* =============== АДАПТИВНОСТЬ =============== */
 @media (max-width: 480px) {
     .header h1 {
@@ -446,6 +568,21 @@ body {
     
     .call-timer {
         font-size: 36px;
+    }
+    
+    .video-wrapper {
+        height: 250px;
+    }
+    
+    .local-video {
+        width: 80px;
+        height: 60px;
+    }
+    
+    .control-btn {
+        max-width: 100px;
+        padding: 10px;
+        font-size: 12px;
     }
 }
 
