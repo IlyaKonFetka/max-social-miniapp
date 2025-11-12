@@ -296,38 +296,80 @@ body {
     text-align: center;
     padding: 32px;
     width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
 }
 
-.volunteer-avatar {
+.video-wrapper {
+    position: relative;
+    width: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    min-height: 260px;
+}
+
+.remote-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.local-video {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
     width: 120px;
-    height: 120px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 50%;
+    height: 160px;
+    border-radius: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    object-fit: cover;
+    background: rgba(0, 0, 0, 0.7);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.video-placeholder {
+    position: absolute;
+    inset: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin: 0 auto 24px;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.5);
+    font-size: 18px;
 }
 
-.avatar-icon {
-    font-size: 64px;
+.placeholder-icon {
+    font-size: 48px;
 }
 
-.call-content h2 {
-    font-size: 28px;
-    margin-bottom: 8px;
+.call-info h2 {
+    font-size: 24px;
+    margin-bottom: 4px;
 }
 
 .volunteer-name {
     font-size: 18px;
     opacity: 0.9;
-    margin-bottom: 24px;
+    margin-bottom: 8px;
+}
+
+.call-status {
+    font-size: 14px;
+    opacity: 0.75;
+    margin-bottom: 12px;
 }
 
 .call-timer {
-    font-size: 48px;
+    font-size: 42px;
     font-weight: 300;
-    margin-bottom: 32px;
+    margin-bottom: 0;
     font-variant-numeric: tabular-nums;
 }
 
@@ -335,7 +377,7 @@ body {
     display: flex;
     gap: 16px;
     justify-content: center;
-    margin-bottom: 24px;
+    flex-wrap: wrap;
 }
 
 .control-btn {
@@ -393,6 +435,86 @@ body {
     background: rgba(255, 255, 255, 0.3);
 }
 
+/* =============== DEV PANEL =============== */
+.dev-panel {
+    margin-top: 32px;
+    padding: 20px;
+    border: 1px dashed var(--border-color);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.dev-panel-text {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.dev-input-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.dev-input-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.dev-input-grid input {
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    font-size: 14px;
+}
+
+.dev-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.dev-actions button {
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none;
+    background: var(--primary-color);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.dev-actions button.active {
+    background: #1661c4;
+}
+
+.dev-actions button.ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+
+.dev-actions button:hover {
+    opacity: 0.85;
+}
+
+.dev-status {
+    margin-top: 10px;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.dev-hint {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
 /* =============== КНОПКИ =============== */
 .btn-secondary {
     background: transparent;
@@ -445,7 +567,19 @@ body {
     }
     
     .call-timer {
-        font-size: 36px;
+        font-size: 32px;
+    }
+
+    .call-content {
+        padding: 24px;
+    }
+
+    .local-video {
+        width: 96px;
+        height: 128px;
+    }
+
+    .dev-input-grid {
+        grid-template-columns: 1fr;
     }
 }
-

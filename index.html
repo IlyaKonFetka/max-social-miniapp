@@ -68,6 +68,34 @@
                     <li>Общайтесь через голосовую связь или чат</li>
                 </ol>
             </div>
+
+            <!-- Режим тестирования (для двух ноутбуков без MAX) -->
+            <section class="dev-panel hidden" id="devPanel">
+                <h3>🧪 Режим тестирования (без MAX)</h3>
+                <p class="dev-panel-text">
+                    Укажите адрес сигнального сервера и общий Room ID, чтобы соединить два устройства напрямую.
+                </p>
+                <div class="dev-input-grid">
+                    <label>
+                        <span>Signaling URL (wss)</span>
+                        <input type="text" id="devSignalingUrl" placeholder="wss://example.ngrok-free.app/ws">
+                    </label>
+                    <label>
+                        <span>Room ID</span>
+                        <input type="text" id="devRoomId" placeholder="team-room">
+                    </label>
+                </div>
+                <div class="dev-actions">
+                    <button type="button" id="devSaveBtn">Сохранить</button>
+                    <button type="button" id="devVolunteerToggle">Режим волонтёра</button>
+                    <button type="button" id="devResetBtn" class="ghost">Сбросить</button>
+                </div>
+                <p class="dev-status" id="devStatusText">Ожидает настроек</p>
+                <p class="dev-hint">
+                    1) Запустите signaling сервер (`npm run start-signaling`). 2) При необходимости пробросьте порт через `ngrok http 3001`.
+                    3) На обоих устройствах введите один и тот же Room ID. Один из ноутов включает режим волонтёра и ждёт вызов.
+                </p>
+            </section>
         </main>
 
         <!-- Экран ожидания волонтёра -->
@@ -83,18 +111,30 @@
         <!-- Экран активного звонка -->
         <div class="call-screen hidden" id="callScreen">
             <div class="call-content">
-                <div class="volunteer-avatar">
-                    <span class="avatar-icon">👤</span>
+                <div class="video-wrapper">
+                    <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+                    <div class="video-placeholder" id="remotePlaceholder">
+                        <span class="placeholder-icon">🎥</span>
+                        <p>Ждём подключение волонтёра...</p>
+                    </div>
+                    <video id="localVideo" class="local-video" autoplay playsinline muted></video>
                 </div>
-                <h2>Волонтёр на связи</h2>
-                <p class="volunteer-name" id="volunteerName">Анонимный волонтёр</p>
-                
-                <div class="call-timer" id="callTimer">00:00</div>
+
+                <div class="call-info">
+                    <h2>Волонтёр на связи</h2>
+                    <p class="volunteer-name" id="volunteerName">Анонимный волонтёр</p>
+                    <p class="call-status" id="callStatusText">Подключаемся к волонтёру...</p>
+                    <div class="call-timer" id="callTimer">00:00</div>
+                </div>
                 
                 <div class="call-controls">
                     <button class="control-btn mute-btn" id="muteBtn">
                         <span class="control-icon">🔇</span>
                         <span class="control-text">Выкл. микрофон</span>
+                    </button>
+                    <button class="control-btn camera-btn" id="cameraBtn">
+                        <span class="control-icon">🎥</span>
+                        <span class="control-text">Выкл. камеру</span>
                     </button>
                     <button class="control-btn end-btn" id="endCallBtn">
                         <span class="control-icon">📵</span>
@@ -116,8 +156,6 @@
         </footer>
     </div>
 
-    <!-- Подключаем скрипт приложения -->
     <script src="app.js"></script>
 </body>
 </html>
-
