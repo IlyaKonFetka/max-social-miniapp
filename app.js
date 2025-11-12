@@ -73,7 +73,11 @@ async function loadConfig() {
 // Проверка здоровья API
 async function checkApiHealth() {
     try {
-        const response = await fetch(`${AppState.apiBaseUrl}/health`);
+        const response = await fetch(`${AppState.apiBaseUrl}/health`, {
+            headers: {
+                'ngrok-skip-browser-warning': 'true'
+            }
+        });
         const data = await response.json();
         console.log('API здоровье:', data);
         updateStatus('connected', 'API подключен');
@@ -236,7 +240,8 @@ async function sendCallRequestToBot() {
         const response = await fetch(`${AppState.apiBaseUrl}/api/call-requests`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
             },
             body: JSON.stringify({
                 user_id: userId,
@@ -273,7 +278,11 @@ async function connectToVolunteer() {
     
     try {
         // Получаем доступного волонтёра
-        const volunteersResponse = await fetch(`${AppState.apiBaseUrl}/api/volunteers/available`);
+        const volunteersResponse = await fetch(`${AppState.apiBaseUrl}/api/volunteers/available`, {
+            headers: {
+                'ngrok-skip-browser-warning': 'true'
+            }
+        });
         const volunteers = await volunteersResponse.json();
         
         if (volunteers.length === 0) {
@@ -288,7 +297,8 @@ async function connectToVolunteer() {
         const sessionResponse = await fetch(`${AppState.apiBaseUrl}/api/call-sessions`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
             },
             body: JSON.stringify({
                 request_id: AppState.currentRequestId,
@@ -369,7 +379,10 @@ async function cancelCall() {
         // Отменяем запрос на сервере
         if (AppState.currentRequestId) {
             await fetch(`${AppState.apiBaseUrl}/api/call-requests/${AppState.currentRequestId}/cancel`, {
-                method: 'PUT'
+                method: 'PUT',
+                headers: {
+                    'ngrok-skip-browser-warning': 'true'
+                }
             });
             console.log('Запрос отменён на сервере');
         }
@@ -407,7 +420,8 @@ async function endCall() {
             const response = await fetch(`${AppState.apiBaseUrl}/api/call-sessions/${AppState.currentSessionId}/end`, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': 'true'
                 },
                 body: JSON.stringify({
                     duration: duration,
