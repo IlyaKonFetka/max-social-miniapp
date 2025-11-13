@@ -1,5 +1,5 @@
 """
-Бэкенд для мини-приложения "Помощь слабовидящим"
+Backend API для мини-приложения помощи людям с ОВ
 FastAPI сервер
 """
 
@@ -8,38 +8,42 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Optional
-import uvicorn
 
 from database import get_db, init_db
-from models import CallRequest, Volunteer, CallSession
+from models import User, Request, VideoSession, VolunteerStats
 from schemas import (
-    CallRequestCreate,
-    CallRequestResponse,
-    VolunteerCreate,
-    VolunteerResponse,
-    CallSessionCreate,
-    CallSessionResponse,
-    CallSessionUpdate
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+    RequestCreate,
+    RequestResponse,
+    RequestUpdate,
+    VideoSessionCreate,
+    VideoSessionResponse,
+    VideoSessionUpdate,
+    VolunteerStatsResponse
 )
 
 app = FastAPI(
-    title="Помощь слабовидящим API",
-    description="API для мини-приложения помощи слабовидящим",
+    title="API помощи людям с ОВ",
+    description="API для бота и мини-приложения",
     version="1.0.0"
 )
 
-# CORS для работы с фронтендом
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене указать конкретные домены
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+# ==================== LIFECYCLE ====================
+
 @app.on_event("startup")
-async def startup_event():
+async def startup():
     """Инициализация при запуске"""
     init_db()
     print("База данных инициализирована")
@@ -47,9 +51,9 @@ async def startup_event():
 
 @app.get("/")
 async def root():
-    """Корневой эндпоинт"""
+    """Главная страница API"""
     return {
-        "message": "API мини-приложения 'Помощь слабовидящим'",
+        "message": "API помощи людям с ОВ",
         "version": "1.0.0",
         "status": "running"
     }
@@ -61,19 +65,90 @@ async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 
-# ==================== ЗАПРОСЫ НА ПОМОЩЬ ====================
+# ==================== USERS ====================
 
-@app.post("/api/call-requests", response_model=CallRequestResponse)
-async def create_call_request(
-    request: CallRequestCreate,
+@app.post("/api/users", response_model=UserResponse, status_code=201)
+async def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    """Создать нового пользователя или вернуть существующего"""
+    # Проверяем существование
+    existing_user = db.query(User).filter(User.user_id == user.user_id).first()
+    if existing_user:
+        return existing_user
+    
+    # Создаём нового
+    db_user = User(
+        user_id=user.user_id,
+        name=user.name,
+        role=user.role,
+        banned=False
+    )
+    db.add(db_user)
+    
+    # Если роль волонтёр - создаём статистику
+    if user.role.value == "volunteer":
+        stats = VolunteerStats(volunteer_id=user.user_id)
+        db.add(stats)
+    
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+
+
+@app.get("/api/users/{user_id}", response_model=UserResponse)
+async def get_user(user_id: int, db: Session = Depends(get_db)):
+    """Получить пользователя по ID"""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return user
+
+
+@app.put("/api/users/{user_id}", response_model=UserResponse)
+async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
+    """Обновить пользователя"""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    if user_update.name is not None:
+        user.name = user_update.name
+    if user_update.role is not None:
+        user.role = user_update.role
+    if user_update.banned is not None:
+        user.banned = user_update.banned
+    
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.get("/api/users", response_model=List[UserResponse])
+async def list_users(
+    role: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
     db: Session = Depends(get_db)
 ):
-    """Создать новый запрос на помощь"""
-    db_request = CallRequest(
+    """Получить список пользователей с фильтром"""
+    query = db.query(User)
+    
+    if role:
+        query = query.filter(User.role == role)
+    
+    users = query.offset(skip).limit(limit).all()
+    return users
+
+
+# ==================== REQUESTS ====================
+
+@app.post("/api/requests", response_model=RequestResponse, status_code=201)
+async def create_request(request: RequestCreate, db: Session = Depends(get_db)):
+    """Создать новую заявку на помощь"""
+    db_request = Request(
         user_id=request.user_id,
-        action_type=request.action_type,
-        status="pending",
-        created_at=datetime.now()
+        description=request.description,
+        when_needed=request.when_needed,
+        status="pending"
     )
     db.add(db_request)
     db.commit()
@@ -81,227 +156,148 @@ async def create_call_request(
     return db_request
 
 
-@app.get("/api/call-requests/{request_id}", response_model=CallRequestResponse)
-async def get_call_request(request_id: int, db: Session = Depends(get_db)):
-    """Получить информацию о запросе"""
-    request = db.query(CallRequest).filter(CallRequest.id == request_id).first()
+@app.get("/api/requests/{request_id}", response_model=RequestResponse)
+async def get_request(request_id: int, db: Session = Depends(get_db)):
+    """Получить заявку по ID"""
+    request = db.query(Request).filter(Request.id == request_id).first()
     if not request:
-        raise HTTPException(status_code=404, detail="Запрос не найден")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     return request
 
 
-@app.get("/api/call-requests/pending", response_model=List[CallRequestResponse])
-async def get_pending_requests(db: Session = Depends(get_db)):
-    """Получить все ожидающие запросы"""
-    requests = db.query(CallRequest).filter(
-        CallRequest.status == "pending"
-    ).order_by(CallRequest.created_at).all()
+@app.get("/api/requests", response_model=List[RequestResponse])
+async def list_requests(
+    user_id: Optional[int] = None,
+    volunteer_id: Optional[int] = None,
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """Получить список заявок с фильтрами"""
+    query = db.query(Request)
+    
+    if user_id:
+        query = query.filter(Request.user_id == user_id)
+    if volunteer_id:
+        query = query.filter(Request.volunteer_id == volunteer_id)
+    if status:
+        query = query.filter(Request.status == status)
+    
+    requests = query.order_by(Request.created_at.desc()).offset(skip).limit(limit).all()
     return requests
 
 
-@app.put("/api/call-requests/{request_id}/cancel")
-async def cancel_call_request(request_id: int, db: Session = Depends(get_db)):
-    """Отменить запрос на помощь"""
-    request = db.query(CallRequest).filter(CallRequest.id == request_id).first()
+@app.put("/api/requests/{request_id}", response_model=RequestResponse)
+async def update_request(
+    request_id: int,
+    request_update: RequestUpdate,
+    db: Session = Depends(get_db)
+):
+    """Обновить заявку"""
+    request = db.query(Request).filter(Request.id == request_id).first()
     if not request:
-        raise HTTPException(status_code=404, detail="Запрос не найден")
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
     
-    request.status = "cancelled"
-    request.updated_at = datetime.now()
+    if request_update.volunteer_id is not None:
+        request.volunteer_id = request_update.volunteer_id
+    if request_update.status is not None:
+        request.status = request_update.status
+        if request_update.status.value == "completed":
+            request.completed_at = datetime.now()
+    if request_update.rating is not None:
+        request.rating = request_update.rating
+    if request_update.comment is not None:
+        request.comment = request_update.comment
+    
     db.commit()
-    return {"message": "Запрос отменён", "request_id": request_id}
+    db.refresh(request)
+    return request
 
 
-# ==================== ВОЛОНТЁРЫ ====================
-
-@app.post("/api/volunteers", response_model=VolunteerResponse)
-async def create_volunteer(
-    volunteer: VolunteerCreate,
-    db: Session = Depends(get_db)
-):
-    """Зарегистрировать нового волонтёра"""
-    db_volunteer = Volunteer(
-        user_id=volunteer.user_id,
-        name=volunteer.name,
-        is_available=True,
-        rating=0.0,
-        total_calls=0,
-        registered_at=datetime.now()
-    )
-    db.add(db_volunteer)
-    db.commit()
-    db.refresh(db_volunteer)
-    return db_volunteer
+@app.get("/api/requests/pending/all", response_model=List[RequestResponse])
+async def get_pending_requests(db: Session = Depends(get_db)):
+    """Получить все ожидающие заявки для волонтёров"""
+    requests = db.query(Request).filter(Request.status == "pending").order_by(Request.created_at).all()
+    return requests
 
 
-@app.get("/api/volunteers/{volunteer_id}", response_model=VolunteerResponse)
-async def get_volunteer(volunteer_id: int, db: Session = Depends(get_db)):
-    """Получить информацию о волонтёре"""
-    volunteer = db.query(Volunteer).filter(Volunteer.id == volunteer_id).first()
-    if not volunteer:
-        raise HTTPException(status_code=404, detail="Волонтёр не найден")
-    return volunteer
+# ==================== VIDEO SESSIONS ====================
 
-
-@app.get("/api/volunteers/available", response_model=List[VolunteerResponse])
-async def get_available_volunteers(db: Session = Depends(get_db)):
-    """Получить список доступных волонтёров"""
-    volunteers = db.query(Volunteer).filter(
-        Volunteer.is_available == True
-    ).order_by(Volunteer.rating.desc()).all()
-    return volunteers
-
-
-@app.put("/api/volunteers/{volunteer_id}/availability")
-async def update_volunteer_availability(
-    volunteer_id: int,
-    is_available: bool,
-    db: Session = Depends(get_db)
-):
-    """Обновить доступность волонтёра"""
-    volunteer = db.query(Volunteer).filter(Volunteer.id == volunteer_id).first()
-    if not volunteer:
-        raise HTTPException(status_code=404, detail="Волонтёр не найден")
-    
-    volunteer.is_available = is_available
-    db.commit()
-    return {"message": "Доступность обновлена", "volunteer_id": volunteer_id}
-
-
-# ==================== СЕССИИ ЗВОНКОВ ====================
-
-@app.post("/api/call-sessions", response_model=CallSessionResponse)
-async def create_call_session(
-    session: CallSessionCreate,
-    db: Session = Depends(get_db)
-):
-    """Создать новую сессию звонка"""
-    # Проверяем, что запрос существует
-    request = db.query(CallRequest).filter(
-        CallRequest.id == session.request_id
-    ).first()
-    if not request:
-        raise HTTPException(status_code=404, detail="Запрос не найден")
-    
-    # Проверяем, что волонтёр существует
-    volunteer = db.query(Volunteer).filter(
-        Volunteer.id == session.volunteer_id
-    ).first()
-    if not volunteer:
-        raise HTTPException(status_code=404, detail="Волонтёр не найден")
-    
-    # Создаём сессию
-    db_session = CallSession(
-        request_id=session.request_id,
-        volunteer_id=session.volunteer_id,
-        status="active",
-        started_at=datetime.now()
+@app.post("/api/video-sessions", response_model=VideoSessionResponse, status_code=201)
+async def create_video_session(session: VideoSessionCreate, db: Session = Depends(get_db)):
+    """Создать новую видео-сессию"""
+    db_session = VideoSession(
+        user_id=session.user_id,
+        room_id=session.room_id,
+        status="searching"
     )
     db.add(db_session)
-    
-    # Обновляем статус запроса
-    request.status = "active"
-    request.updated_at = datetime.now()
-    
-    # Обновляем доступность волонтёра
-    volunteer.is_available = False
-    
     db.commit()
     db.refresh(db_session)
     return db_session
 
 
-@app.get("/api/call-sessions/{session_id}", response_model=CallSessionResponse)
-async def get_call_session(session_id: int, db: Session = Depends(get_db)):
-    """Получить информацию о сессии звонка"""
-    session = db.query(CallSession).filter(CallSession.id == session_id).first()
+@app.get("/api/video-sessions/{session_id}", response_model=VideoSessionResponse)
+async def get_video_session(session_id: int, db: Session = Depends(get_db)):
+    """Получить видео-сессию по ID"""
+    session = db.query(VideoSession).filter(VideoSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Сессия не найдена")
     return session
 
 
-@app.put("/api/call-sessions/{session_id}/end", response_model=CallSessionResponse)
-async def end_call_session(
+@app.put("/api/video-sessions/{session_id}", response_model=VideoSessionResponse)
+async def update_video_session(
     session_id: int,
-    session_update: CallSessionUpdate,
+    session_update: VideoSessionUpdate,
     db: Session = Depends(get_db)
 ):
-    """Завершить сессию звонка"""
-    session = db.query(CallSession).filter(CallSession.id == session_id).first()
+    """Обновить видео-сессию"""
+    session = db.query(VideoSession).filter(VideoSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Сессия не найдена")
     
-    # Обновляем сессию
-    session.status = "completed"
-    session.ended_at = datetime.now()
-    session.duration = session_update.duration
-    session.rating = session_update.rating
-    
-    # Обновляем статус запроса
-    request = db.query(CallRequest).filter(
-        CallRequest.id == session.request_id
-    ).first()
-    if request:
-        request.status = "completed"
-        request.updated_at = datetime.now()
-    
-    # Обновляем волонтёра
-    volunteer = db.query(Volunteer).filter(
-        Volunteer.id == session.volunteer_id
-    ).first()
-    if volunteer:
-        volunteer.is_available = True
-        volunteer.total_calls += 1
-        if session_update.rating:
-            # Обновляем средний рейтинг
-            total_rating = volunteer.rating * (volunteer.total_calls - 1)
-            volunteer.rating = (total_rating + session_update.rating) / volunteer.total_calls
+    if session_update.volunteer_id is not None:
+        session.volunteer_id = session_update.volunteer_id
+    if session_update.status is not None:
+        session.status = session_update.status
+    if session_update.ended_at is not None:
+        session.ended_at = session_update.ended_at
+    if session_update.duration is not None:
+        session.duration = session_update.duration
+    if session_update.rating is not None:
+        session.rating = session_update.rating
+    if session_update.comment is not None:
+        session.comment = session_update.comment
     
     db.commit()
     db.refresh(session)
     return session
 
 
-@app.get("/api/call-sessions/active", response_model=List[CallSessionResponse])
-async def get_active_sessions(db: Session = Depends(get_db)):
-    """Получить список активных сессий"""
-    sessions = db.query(CallSession).filter(
-        CallSession.status == "active"
+# ==================== VOLUNTEER STATS ====================
+
+@app.get("/api/volunteers/{volunteer_id}/stats", response_model=VolunteerStatsResponse)
+async def get_volunteer_stats(volunteer_id: int, db: Session = Depends(get_db)):
+    """Получить статистику волонтёра"""
+    stats = db.query(VolunteerStats).filter(VolunteerStats.volunteer_id == volunteer_id).first()
+    if not stats:
+        raise HTTPException(status_code=404, detail="Статистика не найдена")
+    return stats
+
+
+@app.get("/api/volunteers/available", response_model=List[UserResponse])
+async def get_available_volunteers(db: Session = Depends(get_db)):
+    """Получить список доступных волонтёров"""
+    # TODO: Добавить статус онлайн/оффлайн
+    volunteers = db.query(User).filter(
+        User.role == "volunteer",
+        User.banned == False
     ).all()
-    return sessions
-
-
-# ==================== СТАТИСТИКА ====================
-
-@app.get("/api/stats/overview")
-async def get_stats_overview(db: Session = Depends(get_db)):
-    """Общая статистика"""
-    total_requests = db.query(CallRequest).count()
-    completed_requests = db.query(CallRequest).filter(
-        CallRequest.status == "completed"
-    ).count()
-    active_sessions = db.query(CallSession).filter(
-        CallSession.status == "active"
-    ).count()
-    total_volunteers = db.query(Volunteer).count()
-    available_volunteers = db.query(Volunteer).filter(
-        Volunteer.is_available == True
-    ).count()
-    
-    return {
-        "total_requests": total_requests,
-        "completed_requests": completed_requests,
-        "active_sessions": active_sessions,
-        "total_volunteers": total_volunteers,
-        "available_volunteers": available_volunteers
-    }
+    return volunteers
 
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8080,
-        reload=True
-    )
-
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)

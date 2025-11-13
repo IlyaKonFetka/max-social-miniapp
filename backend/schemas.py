@@ -5,112 +5,161 @@ Pydantic схемы для валидации данных API
 from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional
+from enum import Enum
 
 
-# ==================== ЗАПРОСЫ НА ПОМОЩЬ ====================
+# ==================== ENUMS ====================
 
-class CallRequestCreate(BaseModel):
-    """Схема для создания запроса на помощь"""
-    user_id: int = Field(..., description="ID пользователя в MAX")
-    action_type: str = Field(..., description="Тип помощи: read, describe, navigate, other")
+class UserRole(str, Enum):
+    """Роли пользователей"""
+    USER = "user"
+    VOLUNTEER = "volunteer"
+    ADMIN = "admin"
+
+
+class RequestStatus(str, Enum):
+    """Статусы заявок"""
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+# ==================== USER ====================
+
+class UserCreate(BaseModel):
+    """Схема для создания пользователя"""
+    user_id: int = Field(..., description="ID пользователя из MAX")
+    name: str = Field(..., description="Имя пользователя")
+    role: UserRole = Field(UserRole.USER, description="Роль пользователя")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "user_id": 12345,
-                "action_type": "read"
+                "name": "Иван Петров",
+                "role": "user"
             }
         }
 
 
-class CallRequestResponse(BaseModel):
-    """Схема ответа с информацией о запросе"""
-    id: int
-    user_id: int
-    action_type: str
-    status: str
-    created_at: datetime
-    updated_at: datetime
-    
-    class Config:
-        orm_mode = True
-
-
-# ==================== ВОЛОНТЁРЫ ====================
-
-class VolunteerCreate(BaseModel):
-    """Схема для регистрации волонтёра"""
-    user_id: int = Field(..., description="ID пользователя в MAX")
-    name: str = Field(..., description="Имя волонтёра")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "user_id": 67890,
-                "name": "Иван Иванов"
-            }
-        }
-
-
-class VolunteerResponse(BaseModel):
-    """Схема ответа с информацией о волонтёре"""
-    id: int
+class UserResponse(BaseModel):
+    """Схема ответа с информацией о пользователе"""
     user_id: int
     name: str
-    is_available: bool
-    rating: float
-    total_calls: int
-    registered_at: datetime
-    last_active_at: datetime
+    role: UserRole
+    banned: bool
+    created_at: datetime
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
-# ==================== СЕССИИ ЗВОНКОВ ====================
+class UserUpdate(BaseModel):
+    """Схема для обновления пользователя"""
+    name: Optional[str] = None
+    role: Optional[UserRole] = None
+    banned: Optional[bool] = None
 
-class CallSessionCreate(BaseModel):
-    """Схема для создания сессии звонка"""
-    request_id: int = Field(..., description="ID запроса на помощь")
-    volunteer_id: int = Field(..., description="ID волонтёра")
+
+# ==================== REQUEST ====================
+
+class RequestCreate(BaseModel):
+    """Схема для создания заявки"""
+    user_id: int = Field(..., description="ID пользователя")
+    description: str = Field(..., description="Описание задачи")
+    when_needed: Optional[datetime] = Field(None, description="Когда нужна помощь")
     
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
-                "request_id": 1,
-                "volunteer_id": 1
+                "user_id": 12345,
+                "description": "Помощь с походом в магазин",
+                "when_needed": "2024-01-15T10:00:00"
             }
         }
 
 
-class CallSessionUpdate(BaseModel):
-    """Схема для обновления сессии звонка"""
-    duration: Optional[int] = Field(None, description="Длительность звонка в секундах")
-    rating: Optional[int] = Field(None, ge=1, le=5, description="Оценка от 1 до 5")
-    feedback: Optional[str] = Field(None, description="Отзыв о звонке")
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "duration": 180,
-                "rating": 5,
-                "feedback": "Очень помогли, спасибо!"
-            }
-        }
-
-
-class CallSessionResponse(BaseModel):
-    """Схема ответа с информацией о сессии звонка"""
+class RequestResponse(BaseModel):
+    """Схема ответа с информацией о заявке"""
     id: int
-    request_id: int
-    volunteer_id: int
+    user_id: int
+    volunteer_id: Optional[int]
+    description: str
+    when_needed: Optional[datetime]
+    status: RequestStatus
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime]
+    rating: Optional[int]
+    comment: Optional[str]
+    
+    class Config:
+        from_attributes = True
+
+
+class RequestUpdate(BaseModel):
+    """Схема для обновления заявки"""
+    volunteer_id: Optional[int] = None
+    status: Optional[RequestStatus] = None
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    comment: Optional[str] = None
+
+
+# ==================== VIDEO SESSION ====================
+
+class VideoSessionCreate(BaseModel):
+    """Схема для создания видео-сессии"""
+    user_id: int = Field(..., description="ID пользователя")
+    room_id: str = Field(..., description="ID комнаты для WebRTC")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "user_id": 12345,
+                "room_id": "room_abc123xyz"
+            }
+        }
+
+
+class VideoSessionResponse(BaseModel):
+    """Схема ответа с информацией о видео-сессии"""
+    id: int
+    user_id: int
+    volunteer_id: Optional[int]
+    room_id: str
     status: str
     started_at: datetime
     ended_at: Optional[datetime]
     duration: Optional[int]
     rating: Optional[int]
-    feedback: Optional[str]
+    comment: Optional[str]
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
+
+class VideoSessionUpdate(BaseModel):
+    """Схема для обновления видео-сессии"""
+    volunteer_id: Optional[int] = None
+    status: Optional[str] = None
+    ended_at: Optional[datetime] = None
+    duration: Optional[int] = None
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    comment: Optional[str] = None
+
+
+# ==================== VOLUNTEER STATS ====================
+
+class VolunteerStatsResponse(BaseModel):
+    """Схема ответа со статистикой волонтёра"""
+    volunteer_id: int
+    aver_mark: float
+    total_calls: int
+    total_requests: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
