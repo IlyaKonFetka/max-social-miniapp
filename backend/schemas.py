@@ -12,18 +12,18 @@ from enum import Enum
 
 class UserRole(str, Enum):
     """Роли пользователей"""
-    USER = "user"
-    VOLUNTEER = "volunteer"
-    ADMIN = "admin"
+    USER = "USER"
+    VOLUNTEER = "VOLUNTEER"
+    ADMIN = "ADMIN"
 
 
 class RequestStatus(str, Enum):
     """Статусы заявок"""
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
+    PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
 
 
 # ==================== USER ====================
@@ -69,6 +69,10 @@ class RequestCreate(BaseModel):
     """Схема для создания заявки"""
     user_id: int = Field(..., description="ID пользователя")
     description: str = Field(..., description="Описание задачи")
+    latitude: Optional[float] = Field(None, description="Широта")
+    longitude: Optional[float] = Field(None, description="Долгота")
+    address: Optional[str] = Field(None, description="Полный адрес")
+    district: Optional[str] = Field(None, description="Район города")
     when_needed: Optional[datetime] = Field(None, description="Когда нужна помощь")
     
     class Config:
@@ -76,6 +80,9 @@ class RequestCreate(BaseModel):
             "example": {
                 "user_id": 12345,
                 "description": "Помощь с походом в магазин",
+                "latitude": 55.751244,
+                "longitude": 37.618423,
+                "district": "Таганский район",
                 "when_needed": "2024-01-15T10:00:00"
             }
         }
@@ -87,6 +94,10 @@ class RequestResponse(BaseModel):
     user_id: int
     volunteer_id: Optional[int]
     description: str
+    latitude: Optional[float]
+    longitude: Optional[float]
+    address: Optional[str]
+    district: Optional[str]
     when_needed: Optional[datetime]
     status: RequestStatus
     created_at: datetime

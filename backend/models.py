@@ -12,26 +12,26 @@ from database import Base
 
 class UserRole(enum.Enum):
     """Роли пользователей"""
-    USER = "user"  # Человек с ОВ (нужна помощь)
-    VOLUNTEER = "volunteer"  # Волонтёр
-    ADMIN = "admin"  # Администратор
+    USER = "USER"  # Человек с ОВ (нужна помощь)
+    VOLUNTEER = "VOLUNTEER"  # Волонтёр
+    ADMIN = "ADMIN"  # Администратор
 
 
 class RequestStatus(enum.Enum):
     """Статусы заявок на отложенную помощь"""
-    PENDING = "pending"  # Ожидает волонтёра
-    ACCEPTED = "accepted"  # Волонтёр принял
-    IN_PROGRESS = "in_progress"  # В процессе выполнения
-    COMPLETED = "completed"  # Выполнена
-    CANCELLED = "cancelled"  # Отменена
+    PENDING = "PENDING"  # Ожидает волонтёра
+    ACCEPTED = "ACCEPTED"  # Волонтёр принял
+    IN_PROGRESS = "IN_PROGRESS"  # В процессе выполнения
+    COMPLETED = "COMPLETED"  # Выполнена
+    CANCELLED = "CANCELLED"  # Отменена
 
 
 class ReportStatus(enum.Enum):
     """Статусы жалоб"""
-    PENDING = "pending"  # Ожидает рассмотрения
-    IN_REVIEW = "in_review"  # На рассмотрении
-    RESOLVED = "resolved"  # Решена
-    REJECTED = "rejected"  # Отклонена
+    PENDING = "PENDING"  # Ожидает рассмотрения
+    IN_REVIEW = "IN_REVIEW"  # На рассмотрении
+    RESOLVED = "RESOLVED"  # Решена
+    REJECTED = "REJECTED"  # Отклонена
 
 
 class User(Base):
@@ -65,6 +65,11 @@ class Request(Base):
     user_id = Column(Integer, ForeignKey("users.user_id"), nullable=False, index=True)
     volunteer_id = Column(Integer, ForeignKey("users.user_id"), nullable=True, index=True)
     description = Column(Text, nullable=False)
+    # Геолокация
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    address = Column(String(500), nullable=True)  # Полный адрес
+    district = Column(String(200), nullable=True)  # Район города
     when_needed = Column(DateTime, nullable=True)  # Когда нужна помощь
     status = Column(Enum(RequestStatus), nullable=False, default=RequestStatus.PENDING)
     created_at = Column(DateTime, default=datetime.now, nullable=False)

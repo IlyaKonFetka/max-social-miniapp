@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from database import get_db, init_db
-from models import User, Request, VideoSession, VolunteerStats
+from models import User, Request, VideoSession, VolunteerStats, RequestStatus, UserRole
 from schemas import (
     UserCreate,
     UserResponse,
@@ -85,7 +85,7 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     
     # Если роль волонтёр - создаём статистику
-    if user.role.value == "volunteer":
+    if user.role.value == "VOLUNTEER":
         stats = VolunteerStats(volunteer_id=user.user_id)
         db.add(stats)
     
@@ -147,8 +147,12 @@ async def create_request(request: RequestCreate, db: Session = Depends(get_db)):
     db_request = Request(
         user_id=request.user_id,
         description=request.description,
+        latitude=request.latitude,
+        longitude=request.longitude,
+        address=request.address,
+        district=request.district,
         when_needed=request.when_needed,
-        status="pending"
+        status="PENDING"
     )
     db.add(db_request)
     db.commit()
@@ -203,7 +207,7 @@ async def update_request(
         request.volunteer_id = request_update.volunteer_id
     if request_update.status is not None:
         request.status = request_update.status
-        if request_update.status.value == "completed":
+        if request_update.status.value == "COMPLETED":
             request.completed_at = datetime.now()
     if request_update.rating is not None:
         request.rating = request_update.rating
@@ -218,7 +222,7 @@ async def update_request(
 @app.get("/api/requests/pending/all", response_model=List[RequestResponse])
 async def get_pending_requests(db: Session = Depends(get_db)):
     """Получить все ожидающие заявки для волонтёров"""
-    requests = db.query(Request).filter(Request.status == "pending").order_by(Request.created_at).all()
+    requests = db.query(Request).filter(Request.status == RequestStatus.PENDING).order_by(Request.created_at).all()
     return requests
 
 
@@ -292,7 +296,7 @@ async def get_available_volunteers(db: Session = Depends(get_db)):
     """Получить список доступных волонтёров"""
     # TODO: Добавить статус онлайн/оффлайн
     volunteers = db.query(User).filter(
-        User.role == "volunteer",
+        User.role == UserRole.VOLUNTEER,
         User.banned == False
     ).all()
     return volunteers

@@ -45,7 +45,7 @@ def init_db():
     Инициализация базы данных
     Создание всех таблиц
     """
-    from models import CallRequest, Volunteer, CallSession
+    from models import User, Request, VideoSession, Archive, VolunteerStats, Report
     Base.metadata.create_all(bind=engine)
     print("Таблицы созданы успешно")
 
