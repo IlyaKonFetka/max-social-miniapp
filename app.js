@@ -52,6 +52,16 @@ const MEDIA_CONSTRAINTS = {
 
 // ============= ИНИЦИАЛИЗАЦИЯ =============
 
+// Извлечение параметров из URL
+function getUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+        user_id: params.get('user_id'),
+        room_id: params.get('room_id'),
+        role: params.get('role')
+    };
+}
+
 // Загрузка конфигурации API
 async function loadConfig() {
     try {
@@ -61,6 +71,26 @@ async function loadConfig() {
         AppState.signalingUrl = config.signalingUrl;
         console.log('API URL загружен:', AppState.apiBaseUrl);
         console.log('Signaling URL загружен:', AppState.signalingUrl);
+        
+        // Получаем параметры из URL
+        const urlParams = getUrlParams();
+        if (urlParams.user_id) {
+            console.log('User ID из URL:', urlParams.user_id);
+            AppState.userData = { user_id: urlParams.user_id };
+            
+            // Отображаем параметры в интерфейсе
+            document.getElementById('userIdValue').textContent = urlParams.user_id;
+        }
+        if (urlParams.room_id) {
+            console.log('Room ID из URL:', urlParams.room_id);
+            AppState.roomId = urlParams.room_id;
+            document.getElementById('roomIdValue').textContent = urlParams.room_id;
+        }
+        if (urlParams.role) {
+            console.log('Role из URL:', urlParams.role);
+            AppState.role = urlParams.role;
+            document.getElementById('roleValue').textContent = urlParams.role;
+        }
         
         // Проверка доступности API
         await checkApiHealth();
