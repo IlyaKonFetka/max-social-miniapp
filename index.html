@@ -4,12 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Помощь слабовидящим - Хакатон 573</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="css/style.css">
     <!-- MAX Bridge библиотека -->
     <script src="https://platform.max.ru/max-bridge.js"></script>
 </head>
 <body>
-    <div class="container">
+    <div class="role-switch" id="roleSwitch">
+        <button type="button" class="role-switch-btn" data-role="user">Для пользователя</button>
+        <button type="button" class="role-switch-btn" data-role="volunteer">Для волонтёра</button>
+    </div>
+
+    <div class="container page" id="userPage">
         <!-- Заголовок -->
         <header class="header">
             <h1>👁️ Помощь слабовидящим</h1>
@@ -35,127 +40,121 @@
                 <p class="call-hint">Нажмите кнопку, и мы соединим вас<br>с волонтёром для помощи</p>
             </div>
 
-            <!-- Быстрые действия -->
-            <div class="quick-actions">
-                <h2>Чем мы можем помочь?</h2>
-                <div class="actions-grid">
-                    <button class="action-card" data-action="read">
-                        <span class="action-icon">📖</span>
-                        <span class="action-text">Прочитать текст</span>
-                    </button>
-                    <button class="action-card" data-action="describe">
-                        <span class="action-icon">🖼️</span>
-                        <span class="action-text">Описать изображение</span>
-                    </button>
-                    <button class="action-card" data-action="navigate">
-                        <span class="action-icon">🗺️</span>
-                        <span class="action-text">Помочь с навигацией</span>
-                    </button>
-                    <button class="action-card" data-action="other">
-                        <span class="action-icon">💬</span>
-                        <span class="action-text">Другое</span>
-                    </button>
-                </div>
-            </div>
-
             <!-- Информация -->
             <div class="info-section">
                 <h3>ℹ️ Как это работает</h3>
                 <ol class="info-list">
                     <li>Нажмите кнопку "Позвать волонтёра"</li>
-                    <li>Выберите тип помощи, который вам нужен</li>
+                    <li>Выберите задачу, которую нужно решить</li>
                     <li>Дождитесь подключения к свободному волонтёру</li>
                     <li>Общайтесь через голосовую связь или чат</li>
                 </ol>
             </div>
 
-            <!-- Режим тестирования (для двух ноутбуков без MAX) -->
-            <section class="dev-panel hidden" id="devPanel">
-                <h3>🧪 Режим тестирования (без MAX)</h3>
-                <p class="dev-panel-text">
-                    Укажите адрес сигнального сервера и общий Room ID, чтобы соединить два устройства напрямую.
-                </p>
-                <div class="dev-input-grid">
-                    <label>
-                        <span>Signaling URL (wss)</span>
-                        <input type="text" id="devSignalingUrl" placeholder="wss://example.ngrok-free.app/ws">
-                    </label>
-                    <label>
-                        <span>Room ID</span>
-                        <input type="text" id="devRoomId" placeholder="team-room">
-                    </label>
-                </div>
-                <div class="dev-actions">
-                    <button type="button" id="devSaveBtn">Сохранить</button>
-                    <button type="button" id="devVolunteerToggle">Режим волонтёра</button>
-                    <button type="button" id="devResetBtn" class="ghost">Сбросить</button>
-                </div>
-                <p class="dev-status" id="devStatusText">Ожидает настроек</p>
-                <p class="dev-hint">
-                    1) Запустите signaling сервер (`npm run start-signaling`). 2) При необходимости пробросьте порт через `ngrok http 3001`.
-                    3) На обоих устройствах введите один и тот же Room ID. Один из ноутов включает режим волонтёра и ждёт вызов.
-                </p>
-            </section>
         </main>
-
-        <!-- Экран ожидания волонтёра -->
-        <div class="waiting-screen hidden" id="waitingScreen">
-            <div class="waiting-content">
-                <div class="spinner"></div>
-                <h2>Ищем волонтёра...</h2>
-                <p>Пожалуйста, подождите. Обычно это занимает меньше минуты.</p>
-                <button class="btn-secondary" id="cancelWaitBtn">Отменить</button>
-            </div>
-        </div>
-
-        <!-- Экран активного звонка -->
-        <div class="call-screen hidden" id="callScreen">
-            <div class="call-content">
-                <div class="video-wrapper">
-                    <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
-                    <div class="video-placeholder" id="remotePlaceholder">
-                        <span class="placeholder-icon">🎥</span>
-                        <p>Ждём подключение волонтёра...</p>
-                    </div>
-                    <video id="localVideo" class="local-video" autoplay playsinline muted></video>
-                </div>
-
-                <div class="call-info">
-                    <h2>Волонтёр на связи</h2>
-                    <p class="volunteer-name" id="volunteerName">Анонимный волонтёр</p>
-                    <p class="call-status" id="callStatusText">Подключаемся к волонтёру...</p>
-                    <div class="call-timer" id="callTimer">00:00</div>
-                </div>
-                
-                <div class="call-controls">
-                    <button class="control-btn mute-btn" id="muteBtn">
-                        <span class="control-icon">🔇</span>
-                        <span class="control-text">Выкл. микрофон</span>
-                    </button>
-                    <button class="control-btn camera-btn" id="cameraBtn">
-                        <span class="control-icon">🎥</span>
-                        <span class="control-text">Выкл. камеру</span>
-                    </button>
-                    <button class="control-btn end-btn" id="endCallBtn">
-                        <span class="control-icon">📵</span>
-                        <span class="control-text">Завершить</span>
-                    </button>
-                </div>
-
-                <!-- Чат для текстовых сообщений -->
-                <div class="chat-toggle">
-                    <button id="toggleChatBtn">💬 Открыть чат</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Футер -->
-        <footer class="footer">
-            <p>🚀 Создано на хакатоне MAX</p>
-            <p class="footer-small">Проект "Помощь слабовидящим"</p>
-        </footer>
     </div>
 
-    <script src="app.js"></script>
+    <div class="container page hidden" id="volunteerPage">
+        <header class="header header-volunteer">
+            <h1>🤝 Кабинет волонтёра</h1>
+            <p class="subtitle">Помогайте пользователям MAX в реальном времени</p>
+        </header>
+
+        <main class="main" id="volunteerMain">
+            <div class="status-card">
+                <div class="status-indicator">
+                    <span class="status-dot connected"></span>
+                    <span id="volunteerStatusText">Вы в режиме ожидания обращений</span>
+                </div>
+            </div>
+
+            <section class="volunteer-controls">
+                <button class="btn-call" id="volunteerStartBtn">
+                    <span class="btn-icon">✅</span>
+                    <span class="btn-text">Начать дежурство</span>
+                </button>
+                <p class="call-hint">Включите дежурство, и мы будем направлять к вам запросы пользователей</p>
+                <button class="btn-secondary" id="volunteerStopBtn">Пауза</button>
+            </section>
+
+            <section class="info-section volunteer-info">
+                <h3>ℹ️ Как проходит помощь</h3>
+                <ol class="info-list">
+                    <li>Получите уведомление о входящем обращении</li>
+                    <li>Подтвердите готовность и подключитесь к видеосвязи</li>
+                    <li>Поддерживайте пользователя голосом и описанием происходящего</li>
+                    <li>Завершите звонок, когда задача выполнена</li>
+                </ol>
+            </section>
+
+            <section class="info-section volunteer-tips">
+                <h3>💡 Советы волонтёру</h3>
+                <ul class="info-list">
+                    <li>Говорите чётко и описывайте ключевые детали</li>
+                    <li>Уточняйте, что требуется пользователю, прежде чем предлагать решение</li>
+                    <li>Следите за стабильностью связи и сообщайте о проблемах</li>
+                </ul>
+            </section>
+        </main>
+    </div>
+
+    <!-- Экран ожидания волонтёра -->
+    <div class="waiting-screen hidden" id="waitingScreen">
+        <div class="waiting-content">
+            <div class="spinner"></div>
+            <h2>Ищем волонтёра...</h2>
+            <p>Пожалуйста, подождите. Обычно это занимает меньше минуты.</p>
+            <button class="btn-secondary" id="cancelWaitBtn">Отменить</button>
+        </div>
+    </div>
+
+    <!-- Экран активного звонка -->
+    <div class="call-screen hidden" id="callScreen">
+        <div class="call-content">
+            <div class="video-wrapper">
+                <video id="remoteVideo" class="remote-video" autoplay playsinline></video>
+                <div class="video-placeholder" id="remotePlaceholder">
+                    <span class="placeholder-icon">🎥</span>
+                    <p>Ждём подключение волонтёра...</p>
+                </div>
+                <video id="localVideo" class="local-video" autoplay playsinline muted></video>
+            </div>
+
+            <div class="call-info">
+                <h2>Волонтёр на связи</h2>
+                <p class="volunteer-name" id="volunteerName">Анонимный волонтёр</p>
+                <p class="call-status" id="callStatusText">Подключаемся к волонтёру...</p>
+                <div class="call-timer" id="callTimer">00:00</div>
+            </div>
+            
+            <div class="call-controls">
+                <button class="control-btn mute-btn" id="muteBtn">
+                    <span class="control-icon">🔇</span>
+                    <span class="control-text">Выкл. микрофон</span>
+                </button>
+                <button class="control-btn camera-btn" id="cameraBtn">
+                    <span class="control-icon">🎥</span>
+                    <span class="control-text">Выкл. камеру</span>
+                </button>
+                <button class="control-btn end-btn" id="endCallBtn">
+                    <span class="control-icon">📵</span>
+                    <span class="control-text">Завершить</span>
+                </button>
+            </div>
+
+            <!-- Чат для текстовых сообщений -->
+            <div class="chat-toggle">
+                <button id="toggleChatBtn">💬 Открыть чат</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Футер -->
+    <footer class="footer">
+        <p>🚀 Создано на хакатоне MAX</p>
+        <p class="footer-small">Проект "Помощь слабовидящим"</p>
+    </footer>
+
+    <script src="js/app.js"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
 const AppState = {
     isMaxReady: false,
     isCallActive: false,
-    selectedAction: null,
+    selectedAction: 'general_help',
     callStartTime: null,
     callTimerInterval: null,
     userData: null,
@@ -19,8 +19,42 @@ const AppState = {
     bridgeListenerRegistered: false,
     signalingUrl: null,
     roomId: null,
-    role: 'user'
+    role: 'user',
+    authToken: null,
+    refreshToken: null,
+    webAppData: null,
+    webAppMeta: null,
+    matchParticipantId: null,
+    matchRoomId: null,
+    matchPollInterval: null,
+    partnerInfo: null,
+    callWebSocket: null,
+    signalQueue: []
 };
+
+const API_ENDPOINTS = {
+    baseUrl: 'http://localhost:8080',
+    get telegramAuth() { return `${this.baseUrl}/api/auth/telegram`; },
+    get matchJoin() { return `${this.baseUrl}/api/match/join`; },
+    matchStatus(participantId) { return `${this.baseUrl}/api/match/status/${participantId}`; },
+    matchLeave(participantId) { return `${this.baseUrl}/api/match/leave/${participantId}`; },
+    get wsBase() { return 'ws://localhost:8080/ws/call'; }
+};
+
+const SEARCH_PARAMS = new URLSearchParams(window.location.search);
+const HASH_PARAMS = new URLSearchParams(window.location.hash && window.location.hash.startsWith('#')
+    ? window.location.hash.substring(1)
+    : '');
+
+function getParamFromUrl(name) {
+    return SEARCH_PARAMS.get(name) ?? HASH_PARAMS.get(name);
+}
+
+const IS_VOLUNTEER_PARAM = getParamFromUrl('isVol') === 'true';
+
+if (IS_VOLUNTEER_PARAM) {
+    AppState.role = 'volunteer';
+}
 
 const SignalingState = {
     socket: null,
@@ -37,13 +71,18 @@ const RTC_CONFIGURATION = {
     ]
 };
 
-const MEDIA_CONSTRAINTS = {
+const USER_MEDIA_CONSTRAINTS = {
     audio: true,
     video: {
         facingMode: { ideal: 'environment' },
         width: { ideal: 1280 },
         height: { ideal: 720 }
     }
+};
+
+const AUDIO_ONLY_CONSTRAINTS = {
+    audio: true,
+    video: false
 };
 
 if (typeof MaxBridge !== 'undefined') {
@@ -72,6 +111,13 @@ if (AppState.isDevelopment) {
     initDevMode();
 }
 
+if (hasQuickActions()) {
+    AppState.selectedAction = null;
+}
+
+initWebAppAuth();
+initRoleSwitch();
+
 
 function getUserData() {
     if (typeof MaxBridge !== 'undefined' && MaxBridge.getUserData) {
@@ -87,6 +133,326 @@ function getUserData() {
 }
 
 
+function initWebAppAuth() {
+    const payload = extractWebAppPayload();
+    if (!payload) {
+        console.log('ℹ️ WebAppData не обнаружены в URL');
+        return;
+    }
+
+    AppState.webAppData = payload.dataString;
+    AppState.webAppMeta = payload.params;
+
+    authenticateWebAppUser(payload.dataString)
+        .catch(() => {
+            // ошибки уже залогированы внутри authenticateWebAppUser
+        });
+}
+
+function extractWebAppPayload() {
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#')) {
+        return null;
+    }
+
+    const hashParams = new URLSearchParams(hash.substring(1));
+    const rawWebAppData = hashParams.get('WebAppData');
+    if (!rawWebAppData) {
+        return null;
+    }
+
+    const decodedData = decodeURIComponent(rawWebAppData);
+    const params = new URLSearchParams(decodedData);
+    const payload = {};
+    params.forEach((value, key) => {
+        payload[key] = value;
+    });
+
+    if (payload.user) {
+        try {
+            payload.userObject = JSON.parse(payload.user);
+            AppState.userData = payload.userObject;
+            personalizeUiForUser(payload.userObject);
+        } catch (error) {
+            console.warn('⚠️ Не удалось распарсить объект пользователя из WebAppData', error);
+        }
+    }
+
+    if (typeof payload.isVol !== 'undefined') {
+        const targetRole = payload.isVol === 'true' ? 'volunteer' : 'user';
+        if (AppState.role !== targetRole) {
+            setRole(targetRole);
+        }
+    }
+
+    return {
+        dataString: decodedData,
+        params: payload
+    };
+}
+
+async function authenticateWebAppUser(webAppDataString) {
+    try {
+        const response = await fetch(API_ENDPOINTS.telegramAuth, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ webAppData: webAppDataString })
+        });
+
+        if (!response.ok) {
+            const errorMessage = await response.text();
+            throw new Error(errorMessage || 'Auth failed');
+        }
+
+        const data = await response.json();
+        AppState.authToken = data.authToken;
+        AppState.refreshToken = data.refreshToken;
+
+        if (data.user) {
+            AppState.userData = data.user;
+            personalizeUiForUser(data.user);
+        }
+
+        console.log('✅ WebAppData проверены на бэкенде');
+        if (AppState.role === 'volunteer') {
+            updateVolunteerStatus('Данные подтверждены, ожидаем обращения');
+        } else {
+            updateStatus('connected', 'Данные подтверждены, можно звонить');
+        }
+    } catch (error) {
+        console.error('❌ Ошибка проверки WebAppData', error);
+        if (AppState.role === 'volunteer') {
+            updateVolunteerStatus('Не удалось подтвердить данные WebApp');
+        } else {
+            updateStatus('error', 'Не удалось подтвердить данные WebApp');
+        }
+        throw error;
+    }
+}
+
+function personalizeUiForUser(user) {
+    if (!user) return;
+    const subtitle = document.querySelector('#userPage .subtitle');
+    const name = user.firstName || user.first_name;
+    if (subtitle && name) {
+        subtitle.textContent = `${name}, волонтёры уже готовы помочь`;
+    }
+
+    const statusText = document.getElementById('statusText');
+    if (statusText) {
+        statusText.textContent = 'Подтверждаем ваше подключение...';
+    }
+}
+
+function initRoleSwitch() {
+    const switchEl = document.getElementById('roleSwitch');
+    if (!switchEl) return;
+
+    switchEl.querySelectorAll('.role-switch-btn').forEach(button => {
+        button.addEventListener('click', () => {
+            const targetRole = button.dataset.role === 'volunteer' ? 'volunteer' : 'user';
+            if (AppState.role !== targetRole) {
+                setRole(targetRole);
+            } else {
+                updateRoleSwitchUI();
+            }
+        });
+    });
+
+    updateRoleSwitchUI();
+}
+
+function updateRoleSwitchUI() {
+    document.querySelectorAll('.role-switch-btn').forEach(button => {
+        const targetRole = button.dataset.role === 'volunteer' ? 'volunteer' : 'user';
+        button.classList.toggle('active', targetRole === AppState.role);
+    });
+}
+
+function updateCameraButtonAvailability() {
+    const cameraBtn = document.getElementById('cameraBtn');
+    if (cameraBtn) {
+        const disabled = !shouldSendVideo();
+        cameraBtn.disabled = disabled;
+        cameraBtn.classList.toggle('disabled', disabled);
+    }
+}
+
+
+// ============= MATCHING API И ВЕБСОКЕТ =============
+
+async function joinMatchQueue(role) {
+    const payload = {
+        role: role === 'volunteer' ? 'VOLUNTEER' : 'USER',
+        displayName: getDisplayName(role),
+        clientId: getClientId(role)
+    };
+
+    const response = await fetch(API_ENDPOINTS.matchJoin, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        throw new Error('Match join failed');
+    }
+
+    return response.json();
+}
+
+function getDisplayName(role) {
+    if (AppState.userData && role !== 'volunteer') {
+        return AppState.userData.firstName || AppState.userData.first_name || 'Пользователь';
+    }
+    if (role === 'volunteer' && AppState.userData) {
+        return AppState.userData.firstName || AppState.userData.first_name || 'Волонтёр';
+    }
+    return role === 'volunteer' ? 'Волонтёр' : 'Пользователь';
+}
+
+function getClientId(role) {
+    const base = role === 'volunteer' ? 'vol' : 'user';
+    return `${base}-${AppState.userData && AppState.userData.id ? AppState.userData.id : Date.now()}`;
+}
+
+function scheduleMatchPolling(role) {
+    clearMatchPolling();
+    AppState.matchPollInterval = setInterval(async () => {
+        try {
+            const status = await pollMatchStatus();
+            if (status.status === 'CONNECTED') {
+                handleMatchConnected(status.roomId, status.partner);
+            }
+        } catch (error) {
+            console.error('❌ Ошибка опроса статуса матча', error);
+        }
+    }, 1500);
+}
+
+function clearMatchPolling() {
+    if (AppState.matchPollInterval) {
+        clearInterval(AppState.matchPollInterval);
+        AppState.matchPollInterval = null;
+    }
+}
+
+async function pollMatchStatus() {
+    if (!AppState.matchParticipantId) {
+        return { status: 'WAITING' };
+    }
+    const response = await fetch(API_ENDPOINTS.matchStatus(AppState.matchParticipantId));
+    if (!response.ok) {
+        throw new Error('Poll status failed');
+    }
+    return response.json();
+}
+
+async function leaveMatchQueue() {
+    clearMatchPolling();
+    if (!AppState.matchParticipantId) return;
+    try {
+        await fetch(API_ENDPOINTS.matchLeave(AppState.matchParticipantId), {
+            method: 'DELETE'
+        });
+    } catch (error) {
+        console.warn('⚠️ Не удалось выйти из очереди', error);
+    } finally {
+        AppState.matchParticipantId = null;
+    }
+}
+
+function handleMatchJoinResponse(response) {
+    if (!response || !response.participantId) {
+        throw new Error('Неверный ответ matchmaking');
+    }
+    AppState.matchParticipantId = response.participantId;
+
+    if (response.status === 'CONNECTED') {
+        handleMatchConnected(response.roomId, response.partner);
+    } else {
+        if (AppState.role === 'volunteer') {
+            updateVolunteerStatus('Вы онлайн и ждёте обращение');
+        }
+        scheduleMatchPolling(AppState.role);
+    }
+}
+
+function handleMatchConnected(roomId, partner) {
+    clearMatchPolling();
+    AppState.matchRoomId = roomId;
+    AppState.partnerInfo = partner;
+    if (AppState.role === 'volunteer') {
+        updateVolunteerStatus('Пользователь найден, соединяем...');
+    }
+    connectToPartner();
+}
+
+function openCallWebSocket(roomId) {
+    closeCallWebSocket();
+    if (!roomId) return;
+    const socketUrl = `${API_ENDPOINTS.wsBase}?roomId=${roomId}`;
+    const ws = new WebSocket(socketUrl);
+    AppState.callWebSocket = ws;
+
+    ws.onopen = () => {
+        console.log('🔌 WebSocket подключен к комнате', roomId);
+        flushSignalQueue();
+    };
+
+    ws.onmessage = event => {
+        try {
+            const data = JSON.parse(event.data);
+            handleBridgeMessage(data);
+        } catch (error) {
+            console.warn('⚠️ Некорректное сообщение WebSocket', error, event.data);
+        }
+    };
+
+    ws.onclose = () => {
+        console.log('🔌 WebSocket отключен');
+        if (AppState.callWebSocket === ws) {
+            AppState.callWebSocket = null;
+        }
+    };
+
+    ws.onerror = error => {
+        console.error('❌ Ошибка WebSocket', error);
+    };
+}
+
+function closeCallWebSocket() {
+    if (AppState.callWebSocket) {
+        try {
+            AppState.callWebSocket.close();
+        } catch (error) {
+            console.warn('⚠️ Ошибка закрытия WebSocket', error);
+        }
+    }
+    AppState.callWebSocket = null;
+    AppState.signalQueue = [];
+}
+
+function flushSignalQueue() {
+    if (!AppState.callWebSocket || AppState.callWebSocket.readyState !== WebSocket.OPEN) {
+        return;
+    }
+    while (AppState.signalQueue.length) {
+        AppState.callWebSocket.send(AppState.signalQueue.shift());
+    }
+}
+
+function shouldSendVideo() {
+    return AppState.role !== 'volunteer';
+}
+
+function resolveMediaConstraints() {
+    return shouldSendVideo() ? USER_MEDIA_CONSTRAINTS : AUDIO_ONLY_CONSTRAINTS;
+}
+
+
 // ============= DEV MODE / SIGNALING =============
 
 function initDevMode() {
@@ -95,7 +461,9 @@ function initDevMode() {
     
     panel.classList.remove('hidden');
     
-    const params = new URLSearchParams(window.location.search);
+    const params = {
+        get: (key) => getParamFromUrl(key)
+    };
     
     let storedUrl = '';
     let storedRoom = '';
@@ -110,7 +478,9 @@ function initDevMode() {
     
     AppState.signalingUrl = params.get('signal') || storedUrl;
     AppState.roomId = params.get('room') || storedRoom || 'test-room';
-    AppState.role = (params.get('role') || storedRole || 'user').toLowerCase();
+
+    const paramRole = params.get('role') || storedRole || 'user';
+    AppState.role = (IS_VOLUNTEER_PARAM ? 'volunteer' : paramRole).toLowerCase();
     
     document.getElementById('devSignalingUrl').value = AppState.signalingUrl || '';
     document.getElementById('devRoomId').value = AppState.roomId || '';
@@ -174,6 +544,10 @@ function persistDevSettings() {
 
 function setRole(role) {
     const normalized = role === 'volunteer' ? 'volunteer' : 'user';
+    if (AppState.role !== normalized) {
+        leaveMatchQueue();
+        cleanupMediaSession();
+    }
     AppState.role = normalized;
     const callBtn = document.getElementById('callBtn');
     const volunteerBtn = document.getElementById('devVolunteerToggle');
@@ -198,6 +572,10 @@ function setRole(role) {
         : '🙋 Режим пользователя');
     
     persistDevSettings();
+    applyRoleLayout();
+    if (normalized === 'volunteer' && !IS_VOLUNTEER_PARAM) {
+        updateVolunteerStatus('Вы в режиме ожидания обращений');
+    }
 }
 
 function updateDevStatus(message) {
@@ -476,15 +854,27 @@ async function handleIncomingOffer(payload) {
 
 function updateStatus(type, message) {
     const indicator = document.getElementById('statusIndicator');
+    if (!indicator) return;
+
     const dot = indicator.querySelector('.status-dot');
     const text = document.getElementById('statusText');
     
-    text.textContent = message;
+    if (text) {
+        text.textContent = message;
+    }
     
-    if (type === 'connected') {
-        dot.classList.add('connected');
-    } else {
-        dot.classList.remove('connected');
+    if (dot) {
+        if (type === 'connected') {
+            dot.classList.add('connected');
+        } else {
+            dot.classList.remove('connected');
+        }
+
+        if (type === 'error') {
+            dot.classList.add('error');
+        } else {
+            dot.classList.remove('error');
+        }
     }
 }
 
@@ -509,16 +899,18 @@ document.getElementById('callBtn').addEventListener('click', () => {
         return;
     }
     
-    if (!AppState.selectedAction) {
+    const quickActionsSection = document.querySelector('.quick-actions');
+    const actionCards = document.querySelectorAll('.action-card');
+
+    if (quickActionsSection && actionCards.length && !AppState.selectedAction) {
         // Если не выбрано действие, прокручиваем к выбору
-        document.querySelector('.quick-actions').scrollIntoView({ 
+        quickActionsSection.scrollIntoView({ 
             behavior: 'smooth',
             block: 'center'
         });
         
         // Подсвечиваем карточки действий
-        const cards = document.querySelectorAll('.action-card');
-        cards.forEach(card => {
+        actionCards.forEach(card => {
             card.style.animation = 'pulse 0.5s';
             setTimeout(() => {
                 card.style.animation = '';
@@ -526,6 +918,10 @@ document.getElementById('callBtn').addEventListener('click', () => {
         });
         
         return;
+    }
+
+    if (!AppState.selectedAction) {
+        AppState.selectedAction = 'general_help';
     }
     
     startCallProcess();
@@ -542,7 +938,10 @@ document.querySelectorAll('.action-card').forEach(card => {
         AppState.selectedAction = this.dataset.action;
         
         const actionText = this.querySelector('.action-text').textContent;
-        document.querySelector('.btn-text').textContent = `Позвать: ${actionText}`;
+        const callBtnText = document.querySelector('#callBtn .btn-text');
+        if (callBtnText) {
+            callBtnText.textContent = `Позвать: ${actionText}`;
+        }
         
         console.log('✅ Выбрано действие:', AppState.selectedAction);
     });
@@ -569,22 +968,49 @@ document.getElementById('toggleChatBtn').addEventListener('click', () => {
     // TODO: Открыть чат интерфейс
 });
 
+const volunteerStartBtn = document.getElementById('volunteerStartBtn');
+if (volunteerStartBtn) {
+    volunteerStartBtn.addEventListener('click', async () => {
+        setRole('volunteer');
+        updateVolunteerStatus('Подключаемся к очереди...');
+        await leaveMatchQueue();
+        try {
+            const response = await joinMatchQueue('volunteer');
+            if (response.status === 'WAITING') {
+                updateVolunteerStatus('Вы онлайн и ждёте обращение');
+            } else {
+                updateVolunteerStatus('Пользователь найден, подключаемся');
+            }
+            handleMatchJoinResponse(response);
+            notifyVolunteerState('volunteer_ready');
+        } catch (error) {
+            console.error('❌ Ошибка очереди волонтёра', error);
+            updateVolunteerStatus('Не удалось подключиться к очереди');
+        }
+    });
+}
+
+const volunteerStopBtn = document.getElementById('volunteerStopBtn');
+if (volunteerStopBtn) {
+    volunteerStopBtn.addEventListener('click', async () => {
+        updateVolunteerStatus('Вы на паузе');
+        await leaveMatchQueue();
+        cleanupMediaSession();
+        notifyVolunteerState('volunteer_paused');
+    });
+}
+
 // ============= ЛОГИКА ЗВОНКА =============
 
 async function startCallProcess() {
     console.log('📞 Начало процесса вызова...');
-    
-    if (AppState.isDevelopment) {
-        const signalingReady = await ensureSignalingReady();
-        if (!signalingReady) {
-            return;
-        }
-    }
-    
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         alert('Ваш браузер не поддерживает видеозвонки');
         return;
     }
+
+    await leaveMatchQueue();
 
     try {
         await ensureLocalStream();
@@ -596,42 +1022,21 @@ async function startCallProcess() {
 
     resetCallTimer();
     updateCallStatus('Ищем волонтёра...');
-    
-    // Показываем экран ожидания
     showScreen('waiting');
-    
-    sendCallRequestToBot();
-    
-    setTimeout(() => {
-        connectToVolunteer();
-    }, 3000);
-}
 
-function sendCallRequestToBot() {
-    if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
-        MaxBridge.sendData({
-            type: 'call_request',
-            action: AppState.selectedAction,
-            media: { audio: true, video: true },
-            timestamp: Date.now()
-        })
-        .then(() => {
-            console.log('✅ Запрос отправлен боту');
-        })
-        .catch(err => {
-            console.error('❌ Ошибка отправки запроса:', err);
-        });
-    } else {
-        console.log('📤 Эмуляция отправки запроса боту:', {
-            type: 'call_request',
-            action: AppState.selectedAction
-        });
+    try {
+        const response = await joinMatchQueue('user');
+        handleMatchJoinResponse(response);
+    } catch (error) {
+        console.error('❌ Не удалось подключиться к очереди', error);
+        alert('Не удалось подключиться к очереди. Проверьте соединение с сервером.');
+        showScreen('main');
     }
 }
 
-async function connectToVolunteer() {
-    console.log('✅ Волонтёр найден!');
-    
+async function connectToPartner() {
+    console.log('✅ Найден собеседник!');
+
     try {
         await ensureLocalStream();
     } catch (error) {
@@ -640,19 +1045,26 @@ async function connectToVolunteer() {
         showScreen('main');
         return;
     }
-    
+
     showScreen('call');
-    updateCallStatus('Подключаемся к волонтёру...');
-    
+    const partnerName = AppState.partnerInfo?.displayName
+        || (AppState.role === 'volunteer' ? 'Пользователь онлайн' : 'Волонтёр');
+    document.getElementById('volunteerName').textContent = partnerName;
+    updateCallStatus(AppState.role === 'volunteer'
+        ? 'Подключаемся к пользователю...'
+        : 'Подключаемся к волонтёру...');
+
     AppState.callStartTime = Date.now();
     startCallTimer();
-    
-    document.getElementById('volunteerName').textContent = 'Волонтёр #' + Math.floor(Math.random() * 9999);
-    
     AppState.isCallActive = true;
-    
-    await initializePeerConnection();
-    
+
+    if (AppState.matchRoomId) {
+        openCallWebSocket(AppState.matchRoomId);
+    }
+
+    const shouldCreateOffer = AppState.role !== 'volunteer';
+    await initializePeerConnection({ createOffer: shouldCreateOffer });
+
     if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
         MaxBridge.sendData({
             type: 'call_started',
@@ -668,6 +1080,7 @@ function cancelCall() {
     cleanupMediaSession();
     
     sendSignal('call_cancelled');
+    leaveMatchQueue();
     
     showScreen('main');
     
@@ -689,7 +1102,9 @@ function endCall(options = {}) {
     if (!silent) {
         sendSignal('call_ended', { duration });
     }
-    
+
+    leaveMatchQueue();
+
     if (silent) {
         updateCallStatus('Собеседник завершил звонок');
     } else {
@@ -718,21 +1133,24 @@ async function ensureLocalStream() {
         return AppState.localStream;
     }
     
-    const stream = await navigator.mediaDevices.getUserMedia(MEDIA_CONSTRAINTS);
+    const constraints = resolveMediaConstraints();
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     AppState.localStream = stream;
     AppState.isMuted = false;
-    AppState.isCameraOff = false;
+    AppState.isCameraOff = !shouldSendVideo();
     attachLocalStream(stream);
     return stream;
 }
 
 function attachLocalStream(stream) {
     const localVideo = document.getElementById('localVideo');
+    const hasVideo = stream.getVideoTracks && stream.getVideoTracks().length > 0;
     if (localVideo) {
-        localVideo.srcObject = stream;
+        localVideo.srcObject = hasVideo ? stream : null;
+        localVideo.classList.toggle('hidden', !hasVideo || shouldSendVideo());
     }
-    
-    if (AppState.isDevelopment && !AppState.remoteStream) {
+
+    if (AppState.isDevelopment && !AppState.remoteStream && hasVideo) {
         const remoteVideo = document.getElementById('remoteVideo');
         const placeholder = document.getElementById('remotePlaceholder');
         if (remoteVideo) {
@@ -743,13 +1161,25 @@ function attachLocalStream(stream) {
         }
         updateCallStatus('Демо-режим: отображается ваш поток');
     }
+
+    if (shouldSendVideo() && hasVideo && !AppState.remoteStream) {
+        const remoteVideo = document.getElementById('remoteVideo');
+        const placeholder = document.getElementById('remotePlaceholder');
+        if (remoteVideo) {
+            remoteVideo.srcObject = stream;
+            remoteVideo.classList.remove('hidden');
+        }
+        if (placeholder) {
+            placeholder.classList.add('hidden');
+        }
+    }
     
     resetControlButtons();
 }
 
 async function initializePeerConnection(options = {}) {
     const { createOffer = true } = options;
-    
+
     if (!window.RTCPeerConnection) {
         updateCallStatus('WebRTC не поддерживается в этом браузере');
         return null;
@@ -761,13 +1191,18 @@ async function initializePeerConnection(options = {}) {
     
     const peer = new RTCPeerConnection(RTC_CONFIGURATION);
     AppState.peerConnection = peer;
-    
+
     peer.ontrack = handleRemoteTrack;
     peer.onicecandidate = event => handleIceCandidate(event);
     peer.onconnectionstatechange = () => handleConnectionState(peer.connectionState);
-    
+
     const localStream = await ensureLocalStream();
     localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+
+    if (!shouldSendVideo()) {
+        // Волонтёр не отправляет видео, но нам нужен видеопоток от пользователя
+        peer.addTransceiver('video', { direction: 'recvonly' });
+    }
     
     if (createOffer) {
         try {
@@ -808,16 +1243,21 @@ function handleRemoteTrack(event) {
     
     AppState.remoteStream = event.streams[0];
     const remoteVideo = document.getElementById('remoteVideo');
-    if (remoteVideo) {
+    const shouldShowRemoteVideo = AppState.role === 'volunteer';
+    if (remoteVideo && shouldShowRemoteVideo) {
         remoteVideo.srcObject = AppState.remoteStream;
     }
-    
-    const placeholder = document.getElementById('remotePlaceholder');
-    if (placeholder) {
-        placeholder.classList.add('hidden');
+
+    if (shouldShowRemoteVideo) {
+        const placeholder = document.getElementById('remotePlaceholder');
+        if (placeholder) {
+            placeholder.classList.add('hidden');
+        }
     }
     
-    updateCallStatus('Волонтёр подключился');
+    updateCallStatus(AppState.role === 'volunteer'
+        ? 'Пользователь подключился'
+        : 'Волонтёр подключился');
 }
 
 function handleConnectionState(state) {
@@ -849,7 +1289,15 @@ function sendSignal(type, payload) {
         payload,
         timestamp: Date.now()
     };
-    
+
+    const serialized = JSON.stringify(message);
+
+    if (AppState.callWebSocket && AppState.callWebSocket.readyState === WebSocket.OPEN) {
+        AppState.callWebSocket.send(serialized);
+    } else {
+        AppState.signalQueue.push(serialized);
+    }
+
     if (typeof MaxBridge !== 'undefined' && MaxBridge.sendData) {
         MaxBridge.sendData(message).catch(err => {
             console.error('❌ Ошибка отправки сигнала MAX Bridge', err);
@@ -954,17 +1402,21 @@ function cleanupMediaSession() {
         AppState.peerConnection.close();
         AppState.peerConnection = null;
     }
-    
+
     if (AppState.localStream) {
         AppState.localStream.getTracks().forEach(track => track.stop());
         AppState.localStream = null;
     }
-    
+
     if (AppState.remoteStream) {
         AppState.remoteStream.getTracks().forEach(track => track.stop());
         AppState.remoteStream = null;
     }
-    
+
+    closeCallWebSocket();
+    AppState.matchRoomId = null;
+    AppState.partnerInfo = null;
+
     const localVideo = document.getElementById('localVideo');
     if (localVideo) localVideo.srcObject = null;
     
@@ -1036,14 +1488,102 @@ function showScreen(screenName) {
     }
 }
 
+function notifyVolunteerState(eventType) {
+    if (typeof MaxBridge !== 'undefined' && typeof MaxBridge.sendData === 'function') {
+        MaxBridge.sendData({ type: eventType, timestamp: Date.now() })
+            .catch(error => console.error('❌ Не удалось отправить статус волонтёра', error));
+    } else if (AppState.isDevelopment) {
+        console.log(`📨 Статус волонтёра: ${eventType}`);
+    }
+}
+
+function updateVolunteerStatus(message) {
+    const statusEl = document.getElementById('volunteerStatusText');
+    if (statusEl && message) {
+        statusEl.textContent = message;
+    }
+}
+
+function applyRoleLayout() {
+    const userPage = document.getElementById('userPage');
+    const volunteerPage = document.getElementById('volunteerPage');
+
+    if (userPage && volunteerPage) {
+        if (AppState.role === 'volunteer') {
+            userPage.classList.add('hidden');
+            volunteerPage.classList.remove('hidden');
+        } else {
+            userPage.classList.remove('hidden');
+            volunteerPage.classList.add('hidden');
+        }
+    }
+
+    const waitingTitle = document.querySelector('#waitingScreen h2');
+    const waitingText = document.querySelector('#waitingScreen p');
+    if (waitingTitle && waitingText) {
+        if (AppState.role === 'volunteer') {
+            waitingTitle.textContent = 'Ожидаем обращение пользователя...';
+            waitingText.textContent = 'Как только пользователь попросит помощи, мы подключим вас.';
+        } else {
+            waitingTitle.textContent = 'Ищем волонтёра...';
+            waitingText.textContent = 'Пожалуйста, подождите. Обычно это занимает меньше минуты.';
+        }
+    }
+
+    const callTitle = document.querySelector('#callScreen .call-info h2');
+    const nameLabel = document.getElementById('volunteerName');
+    const placeholderText = document.querySelector('#remotePlaceholder p');
+    const localVideo = document.getElementById('localVideo');
+
+    if (callTitle) {
+        callTitle.textContent = AppState.role === 'volunteer'
+            ? 'Пользователь на связи'
+            : 'Волонтёр на связи';
+    }
+
+    if (nameLabel) {
+        nameLabel.textContent = AppState.role === 'volunteer'
+            ? 'Пользователь онлайн'
+            : 'Анонимный волонтёр';
+    }
+
+    if (placeholderText) {
+        placeholderText.textContent = AppState.role === 'volunteer'
+            ? 'Ждём подключение пользователя...'
+            : 'Ваше видео транслируется волонтёру';
+    }
+
+    if (localVideo) {
+        localVideo.classList.toggle('hidden', !shouldSendVideo());
+    }
+
+    updateRoleSwitchUI();
+    updateCameraButtonAvailability();
+}
+
 function resetActionSelection() {
-    AppState.selectedAction = null;
-    
-    document.querySelectorAll('.action-card').forEach(card => {
-        card.classList.remove('selected');
-    });
-    
-    document.querySelector('.btn-text').textContent = 'Позвать волонтёра';
+    const actionCards = document.querySelectorAll('.action-card');
+    const btnText = document.querySelector('#callBtn .btn-text');
+
+    if (actionCards.length) {
+        AppState.selectedAction = null;
+        actionCards.forEach(card => card.classList.remove('selected'));
+    } else {
+        AppState.selectedAction = 'general_help';
+    }
+
+    if (btnText) {
+        btnText.textContent = 'Позвать волонтёра';
+    }
+}
+
+function hasQuickActions() {
+    return document.querySelectorAll('.action-card').length > 0;
+}
+
+applyRoleLayout();
+if (AppState.role === 'volunteer') {
+    updateVolunteerStatus('Вы в режиме ожидания обращений');
 }
 
 window.addEventListener('beforeunload', () => {
@@ -1056,6 +1596,8 @@ window.addEventListener('beforeunload', () => {
             });
         }
     }
+
+    leaveMatchQueue();
 });
 
 console.log('📱 Мини-приложение загружено');
