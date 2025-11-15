@@ -7,7 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 import ru.chousik.backend_calls.config.MaxProperties;
-import ru.chousik.backend_calls.dto.TelegramUserDto;
+import ru.chousik.backend_calls.dto.MaxUserDto;
 import ru.chousik.backend_calls.dto.TokenPair;
 import ru.chousik.backend_calls.dto.WebAppAuthRequest;
 import ru.chousik.backend_calls.dto.WebAppAuthResponse;
@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
-public class TelegramAuthService {
+public class MaxAuthService {
 
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
@@ -32,9 +32,9 @@ public class TelegramAuthService {
     private final ObjectMapper objectMapper;
     private final TokenService tokenService;
 
-    public TelegramAuthService(MaxProperties maxProperties,
-                               ObjectMapper objectMapper,
-                               TokenService tokenService) {
+    public MaxAuthService(MaxProperties maxProperties,
+                          ObjectMapper objectMapper,
+                          TokenService tokenService) {
         this.maxProperties = maxProperties;
         this.objectMapper = objectMapper;
         this.tokenService = tokenService;
@@ -58,13 +58,13 @@ public class TelegramAuthService {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Hash mismatch");
         }
 
-        TelegramUserDto user = parseUser(parsedData.get("user"));
+        MaxUserDto user = parseUser(parsedData.get("user"));
         if (user == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "user object missing in WebAppData");
         }
 
         TokenPair tokenPair = tokenService.issueTokens(user.id());
-        return new WebAppAuthResponse(tokenPair.authToken(), tokenPair.refreshToken(), ituser);
+        return new WebAppAuthResponse(tokenPair.authToken(), tokenPair.refreshToken(), user);
     }
 
     private Map<String, String> parseWebAppData(String source) {
@@ -110,12 +110,12 @@ public class TelegramAuthService {
         }
     }
 
-    private TelegramUserDto parseUser(String rawUser) {
+    private MaxUserDto parseUser(String rawUser) {
         if (!StringUtils.hasText(rawUser)) {
             return null;
         }
         try {
-            return objectMapper.readValue(rawUser, TelegramUserDto.class);
+            return objectMapper.readValue(rawUser, MaxUserDto.class);
         } catch (JsonProcessingException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cannot parse user object", e);
         }
